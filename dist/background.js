@@ -680,7 +680,7 @@ async function dispatch() {
         await fail(j.runId, "TAB_CLOSED");
       }
     } else if (j.phase === "queued") safe(launch(j));
-    else await fail(j.runId, "WORKER_INTERRUPTED");
+    else if (j.phase !== "opening") await fail(j.runId, "WORKER_INTERRUPTED");
   }
   for (const j of await acquire(sid)) safe(launch(j));
   await prune();
@@ -860,6 +860,22 @@ async function handle(raw, sender) {
     await mutate(raw.id, raw.type);
     if (raw.type !== "RUN_NOW") for (const j of jobs) await closeOwned(j);
     safe(dispatch());
+    return;
+  }
+  if (raw.type === "MARK_ALL_EVENTS_READ") {
+    if (typeof raw.monitorId !== "string" || !raw.monitorId)
+      throw Error("INVALID_ID");
+    await transaction(["changeEvents"], async (tx) => {
+      const store = tx.objectStore("changeEvents");
+      const readAt = Date.now();
+      for (const event of await request(store.getAll())) {
+        if (event.monitorId === raw.monitorId && !event.readAt) {
+          event.readAt = readAt;
+          await request(store.put(event));
+        }
+      }
+    });
+    await badge();
     return;
   }
   if (raw.type === "MARK_EVENT_READ") {

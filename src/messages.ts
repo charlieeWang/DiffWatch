@@ -29,6 +29,7 @@ export type Message =
       code: string;
     }
   | { type: "MARK_EVENT_READ"; id: string }
+  | { type: "MARK_ALL_EVENTS_READ"; monitorId: string }
   | { type: "STATE" }
   | { type: "CLEAR_ALL" }
   | { type: "SETTINGS"; notificationsEnabled: boolean };

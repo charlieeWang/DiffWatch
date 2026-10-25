@@ -143,10 +143,29 @@ function popup() {
 function dashboard() {
   app.replaceChildren(el("h1", "DOM \u5340\u57DF\u76E3\u63A7"), message);
   const controls = el("nav");
+  const reload = button("", refresh);
+  reload.className = "refresh-icon";
+  reload.title = "\u91CD\u65B0\u6574\u7406";
+  reload.setAttribute("aria-label", "\u91CD\u65B0\u6574\u7406");
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("fill", "none");
+  icon.setAttribute("stroke", "currentColor");
+  icon.setAttribute("stroke-width", "2");
+  icon.setAttribute("stroke-linecap", "round");
+  icon.setAttribute("stroke-linejoin", "round");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute(
+    "d",
+    "M20 7v5h-5 M20 12a8 8 0 1 0-2.34 5.66 M20 12l-2.34-5.66"
+  );
+  icon.append(path);
+  reload.append(icon);
   controls.append(
     button("\u65B0\u589E\u4EFB\u52D9", () => form()),
-    button("\u91CD\u65B0\u6574\u7406", refresh),
-    button("\u8CC7\u6599\u7BA1\u7406", dataPage)
+    button("\u8CC7\u6599\u7BA1\u7406", dataPage),
+    reload
   );
   app.append(
     controls,
@@ -160,18 +179,43 @@ function dashboard() {
     const j = state.jobs.find(
       (j2) => j2.monitorId === m.id && !["finished", "cancelled", "failed"].includes(j2.phase)
     );
+    card.className = "monitor-card";
+    const heading = el("header");
+    heading.className = "monitor-heading";
+    const identity = el("div");
+    identity.className = "monitor-identity";
+    identity.append(el("h2", m.name));
+    heading.append(
+      identity,
+      button("\u7DE8\u8F2F", () => form(m))
+    );
     card.append(
-      el("h2", m.name),
+      heading,
       el("p", m.origin),
       el(
         "p",
         `${!m.enabled ? "\u66AB\u505C" : j ? "\u6AA2\u67E5\u4E2D \xB7 " + j.phase : health[m.health] || m.health}${!j && m.enabled && m.nextDueAt <= Date.now() ? " \xB7 \u4F47\u5217\u7B49\u5F85" : ""} \xB7 \u9023\u7E8C\u932F\u8AA4 ${m.consecutiveFailures}`
-      ),
-      el(
-        "p",
-        `\u6700\u8FD1\u5617\u8A66 ${time(m.lastAttemptAt)}\uFF0F\u6210\u529F ${time(m.lastSuccessAt)}\uFF0F\u8B8A\u66F4 ${time(m.lastChangeAt)}\uFF0F\u4E0B\u6B21 ${time(m.nextDueAt)}`
       )
     );
+    const timings = el("dl");
+    timings.className = "monitor-timings";
+    for (const [label, value] of [
+      ["\u6700\u8FD1\u5617\u8A66", m.lastAttemptAt],
+      ["\u6700\u8FD1\u6210\u529F", m.lastSuccessAt],
+      ["\u6700\u8FD1\u8B8A\u66F4", m.lastChangeAt],
+      ["\u9810\u8A08\u4E0B\u6B21\u6AA2\u67E5", m.nextDueAt]
+    ]) {
+      const item = el("div");
+      item.append(
+        el("dt", label),
+        el(
+          "dd",
+          label === "\u9810\u8A08\u4E0B\u6B21\u6AA2\u67E5" && !m.enabled ? "\u5DF2\u66AB\u505C" : time(value)
+        )
+      );
+      timings.append(item);
+    }
+    card.append(timings);
     if (j && Date.now() > j.deadlineAt)
       card.append(el("p", "\u5DE5\u4F5C\u5DF2\u903E\u6642\uFF0C\u7B49\u5F85 dispatcher \u6E05\u7406\u3002"));
     if (m.lastError)
@@ -186,16 +230,29 @@ function dashboard() {
       await refresh();
     });
     run.disabled = !!j;
-    card.append(
-      run,
-      button(m.enabled ? "\u66AB\u505C" : "\u6062\u5FA9", async () => {
+    const footer = el("footer");
+    footer.className = "monitor-footer";
+    const actions = el("div");
+    actions.className = "monitor-actions";
+    const toggle = button(m.enabled ? "\u5DF2\u555F\u7528" : "\u5DF2\u66AB\u505C", async () => {
+      toggle.disabled = true;
+      try {
         await send({
           type: m.enabled ? "PAUSE_MONITOR" : "RESUME_MONITOR",
           id: m.id
         });
         await refresh();
-      }),
-      button("\u7DE8\u8F2F", () => form(m)),
+      } finally {
+        toggle.disabled = false;
+      }
+    });
+    toggle.className = "monitor-switch";
+    toggle.setAttribute("role", "switch");
+    toggle.setAttribute("aria-checked", String(m.enabled));
+    toggle.setAttribute("aria-label", `${m.name}\uFF1A\u555F\u7528\u76E3\u63A7`);
+    identity.append(toggle);
+    actions.append(
+      run,
       button("\u958B\u555F\u7DB2\u7AD9", () => chrome.tabs.create({ url: m.url })),
       button("\u6B77\u53F2", () => history(m.id)),
       button("\u91CD\u65B0\u8A2D\u5B9A\u57FA\u6E96", async () => {
@@ -203,22 +260,26 @@ function dashboard() {
           await send({ type: "RESET_BASELINE", id: m.id });
           await refresh();
         }
-      }),
-      button("\u522A\u9664", async () => {
-        if (confirm("\u522A\u9664\u6B64\u4EFB\u52D9\u53CA\u6240\u6709\u6B77\u53F2\uFF1F")) {
-          await send({ type: "DELETE_MONITOR", id: m.id });
-          await refresh();
-        }
       })
     );
+    const remove = button("\u522A\u9664\u4EFB\u52D9", async () => {
+      if (confirm("\u522A\u9664\u6B64\u4EFB\u52D9\u53CA\u6240\u6709\u6B77\u53F2\uFF1F")) {
+        await send({ type: "DELETE_MONITOR", id: m.id });
+        await refresh();
+      }
+    });
+    remove.className = "delete-link";
+    footer.append(actions, remove);
+    card.append(footer);
     if (m.health === "needs_permission")
-      card.append(
+      card.insertBefore(
         button("\u91CD\u65B0\u6388\u6B0A", async () => {
           if (await chrome.permissions.request({ origins: [m.origin + "/*"] })) {
             await send({ type: "RESUME_MONITOR", id: m.id });
             await refresh();
           }
-        })
+        }),
+        footer
       );
     app.append(card);
   }
@@ -363,6 +424,8 @@ function form(m) {
   );
   let tabId = draft?.url === source.url ? draft.tabId : void 0;
   let previewKey = "";
+  let previewBusy = false;
+  let saving = false;
   const preview = el("pre");
   const read = () => config({
     name: fields.name.value,
@@ -396,35 +459,75 @@ function form(m) {
     const u = new URL(fields.url.value);
     if (!["http:", "https:"].includes(u.protocol))
       throw Error("UNSUPPORTED_URL");
+    previewKey = "";
+    updateSave();
     tabId = (await chrome.tabs.create({ url: u.href })).id;
     preview.textContent = "\u5DF2\u958B\u555F\u8A2D\u5B9A\u5206\u9801\u3002\u8ACB\u5728\u8A72\u9801\u9EDE\u64CA\u64F4\u5145\u529F\u80FD\u4F86\u8996\u89BA\u5316\u9078\u5340\uFF0C\u6216\u56DE\u6B64\u9801\u9032\u968E\u7DE8\u8F2F selector\u3002";
   });
   open.type = "button";
-  f.append(open);
+  const selectionTools = el("fieldset");
+  selectionTools.className = "selection-tools";
+  selectionTools.append(el("legend", "\u7DB2\u9801\u8207\u9078\u5340\u8A2D\u5B9A"), open);
   const select = button("\u5728\u8A2D\u5B9A\u5206\u9801\u91CD\u65B0\u9078\u5340", async () => {
     if (!tabId) throw Error("\u8ACB\u5148\u958B\u555F\u8A2D\u5B9A\u7DB2\u9801");
     await chrome.tabs.update(tabId, { active: true });
     await send({ type: "START_PICKER", tabId, monitorId: m?.id });
   });
   select.type = "button";
-  f.append(select);
+  selectionTools.append(select);
+  f.append(selectionTools);
   const pre = button("\u6388\u6B0A\u4E26\u9A57\u8B49\u9810\u89BD", async () => {
     const c = read();
-    if (!await chrome.permissions.request({ origins: [c.origin + "/*"] }))
-      throw Error("PERMISSION_REQUIRED");
-    if (!tabId) throw Error("\u8ACB\u5148\u958B\u555F\u8A2D\u5B9A\u7DB2\u9801");
-    const r = await send({ type: "PREVIEW_SELECTION", tabId, config: c });
-    if (!r.ok) throw Error(r.error);
-    preview.textContent = JSON.stringify(r.content, null, 2);
-    previewKey = JSON.stringify(c);
+    const requestedKey = JSON.stringify(c);
+    previewKey = "";
+    previewBusy = true;
+    pre.disabled = true;
+    message.textContent = "";
+    updateSave();
+    try {
+      if (!await chrome.permissions.request({ origins: [c.origin + "/*"] }))
+        throw Error("PERMISSION_REQUIRED");
+      if (!tabId) throw Error("\u8ACB\u5148\u958B\u555F\u8A2D\u5B9A\u7DB2\u9801");
+      const r = await send({ type: "PREVIEW_SELECTION", tabId, config: c });
+      if (!r.ok) throw Error(r.error);
+      preview.textContent = JSON.stringify(r.content, null, 2);
+      previewKey = requestedKey;
+    } finally {
+      previewBusy = false;
+      pre.disabled = false;
+      updateSave();
+    }
   });
   pre.type = "button";
   f.append(pre, preview);
   const save = el("button", "\u6388\u6B0A\u4E26\u5132\u5B58");
   save.type = "submit";
-  f.append(save);
+  const saveHint = el("p");
+  saveHint.className = "save-hint";
+  saveHint.id = "save-hint";
+  saveHint.setAttribute("role", "status");
+  save.setAttribute("aria-describedby", saveHint.id);
+  f.append(saveHint, save);
+  function updateSave() {
+    let needsPreview = true;
+    let valid = false;
+    try {
+      const c = read();
+      valid = true;
+      needsPreview = requiresBaseline(c) && previewKey !== JSON.stringify(c);
+    } catch {
+    }
+    save.disabled = !valid || needsPreview || previewBusy || saving;
+    saveHint.textContent = previewBusy ? "\u6B63\u5728\u9A57\u8B49\u9810\u89BD\u2026" : !valid ? "\u8ACB\u5B8C\u6210\u6709\u6548\u7684\u4EFB\u52D9\u8A2D\u5B9A\uFF0C\u518D\u9A57\u8B49\u9810\u89BD\u3002" : needsPreview ? "\u8ACB\u5148\u6309\u300C\u6388\u6B0A\u4E26\u9A57\u8B49\u9810\u89BD\u300D\uFF0C\u6210\u529F\u5F8C\u624D\u80FD\u5132\u5B58\u3002" : "\u8A2D\u5B9A\u5DF2\u53EF\u5132\u5B58\u3002";
+  }
+  f.addEventListener("input", updateSave);
+  f.addEventListener("change", updateSave);
+  updateSave();
   f.onsubmit = (e) => {
     e.preventDefault();
+    updateSave();
+    if (save.disabled) return;
+    message.textContent = "";
     let c;
     try {
       c = read();
@@ -432,6 +535,8 @@ function form(m) {
       error(err);
       return;
     }
+    saving = true;
+    updateSave();
     const granted = chrome.permissions.request({ origins: [c.origin + "/*"] });
     void granted.then(async (ok) => {
       if (!ok) throw Error("PERMISSION_REQUIRED");
@@ -448,14 +553,40 @@ function form(m) {
       );
       editing = false;
       await refresh();
-    }).catch(error);
+    }).catch(error).finally(() => {
+      saving = false;
+      updateSave();
+    });
   };
   const cancel = button("\u8FD4\u56DE", () => {
     editing = false;
     dashboard();
   });
   cancel.type = "button";
-  f.append(cancel);
+  cancel.className = "back-icon";
+  cancel.title = "\u8FD4\u56DE\u4EFB\u52D9\u5217\u8868";
+  cancel.setAttribute("aria-label", "\u8FD4\u56DE\u4EFB\u52D9\u5217\u8868");
+  cancel.textContent = "";
+  const backSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  backSvg.setAttribute("viewBox", "0 0 24 24");
+  backSvg.setAttribute("aria-hidden", "true");
+  backSvg.setAttribute("fill", "none");
+  backSvg.setAttribute("stroke", "currentColor");
+  backSvg.setAttribute("stroke-width", "2");
+  backSvg.setAttribute("stroke-linecap", "round");
+  backSvg.setAttribute("stroke-linejoin", "round");
+  const backPath = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "path"
+  );
+  backPath.setAttribute("d", "M19 12H5 M12 5l-7 7 7 7");
+  backSvg.append(backPath);
+  cancel.append(backSvg);
+  const formHeading = el("div");
+  formHeading.className = "page-heading";
+  const title = app.querySelector("h1");
+  title.replaceWith(formHeading);
+  formHeading.append(cancel, title);
   app.append(f);
 }
 function history(id, eventId) {
@@ -468,6 +599,21 @@ function history(id, eventId) {
       void refresh();
     })
   );
+  const markAll = button("\u5168\u90E8\u6A19\u8A18\u5DF2\u8B80", async () => {
+    markAll.disabled = true;
+    try {
+      await send({ type: "MARK_ALL_EVENTS_READ", monitorId: id });
+      state = await send({ type: "STATE" });
+      history(id, eventId);
+    } finally {
+      markAll.disabled = false;
+    }
+  });
+  markAll.disabled = !state.events.some(
+    (e) => e.monitorId === id && !e.readAt
+  );
+  markAll.title = "\u5C07\u6B64\u4EFB\u52D9\u7684\u6240\u6709\u6B77\u53F2\u7D00\u9304\u6A19\u8A18\u70BA\u5DF2\u8B80";
+  app.append(markAll);
   const m = state.monitors.find((m2) => m2.id === id);
   app.append(el("p", m?.name || id));
   const events = state.events.filter((e) => e.monitorId === id && (!eventId || e.id === eventId)).sort((a, b) => b.detectedAt - a.detectedAt);

@@ -210,12 +210,35 @@ try {
   const editor = await nextPage;
   await editor.waitForLoadState();
   await editor.locator("input[name=name]").fill("視覺選取測試");
+  const saveButton = editor.getByRole("button", {
+    name: "授權並儲存",
+    exact: true,
+  });
+  assert(
+    await saveButton.isDisabled(),
+    "new task requires preview before saving",
+  );
+  assert.equal(await editor.locator(".selection-tools button").count(), 2);
+  assert(
+    await editor.getByRole("button", { name: "返回任務列表" }).isVisible(),
+  );
+  await editor.locator("form").evaluate((form) => form.requestSubmit());
+  assert(await saveButton.isDisabled(), "Enter cannot bypass the preview gate");
   await editor.getByRole("button", { name: "授權並驗證預覽" }).click();
   await editor
     .locator("form pre")
     .filter({ hasText: "normalizationVersion" })
     .waitFor();
   editor.on("dialog", (d) => d.accept());
+  assert(await saveButton.isEnabled(), "successful preview enables save");
+  await editor.locator("input[name=selector]").fill("#products h2");
+  assert(await saveButton.isDisabled(), "changed settings invalidate preview");
+  await editor.locator("input[name=selector]").fill("#products");
+  assert(await saveButton.isEnabled());
+  await editor.screenshot({
+    path: "work/form-preview-gate.png",
+    fullPage: true,
+  });
   await editor.getByRole("button", { name: "授權並儲存", exact: true }).click();
   live = await until((s) =>
     s.monitors.some((m) => m.name === "視覺選取測試" && m.health === "healthy"),

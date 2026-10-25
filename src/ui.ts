@@ -67,10 +67,29 @@ function popup() {
 function dashboard() {
   app.replaceChildren(el("h1", "DOM 區域監控"), message);
   const controls = el("nav");
+  const reload = button("", refresh);
+  reload.className = "refresh-icon";
+  reload.title = "重新整理";
+  reload.setAttribute("aria-label", "重新整理");
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("fill", "none");
+  icon.setAttribute("stroke", "currentColor");
+  icon.setAttribute("stroke-width", "2");
+  icon.setAttribute("stroke-linecap", "round");
+  icon.setAttribute("stroke-linejoin", "round");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute(
+    "d",
+    "M20 7v5h-5 M20 12a8 8 0 1 0-2.34 5.66 M20 12l-2.34-5.66",
+  );
+  icon.append(path);
+  reload.append(icon);
   controls.append(
     button("新增任務", () => form()),
-    button("重新整理", refresh),
     button("資料管理", dataPage),
+    reload,
   );
   app.append(
     controls,
@@ -86,18 +105,43 @@ function dashboard() {
         j.monitorId === m.id &&
         !["finished", "cancelled", "failed"].includes(j.phase),
     );
+    card.className = "monitor-card";
+    const heading = el("header");
+    heading.className = "monitor-heading";
+    const identity = el("div");
+    identity.className = "monitor-identity";
+    identity.append(el("h2", m.name));
+    heading.append(
+      identity,
+      button("編輯", () => form(m)),
+    );
     card.append(
-      el("h2", m.name),
+      heading,
       el("p", m.origin),
       el(
         "p",
         `${!m.enabled ? "暫停" : j ? "檢查中 · " + j.phase : health[m.health] || m.health}${!j && m.enabled && m.nextDueAt <= Date.now() ? " · 佇列等待" : ""} · 連續錯誤 ${m.consecutiveFailures}`,
       ),
-      el(
-        "p",
-        `最近嘗試 ${time(m.lastAttemptAt)}／成功 ${time(m.lastSuccessAt)}／變更 ${time(m.lastChangeAt)}／下次 ${time(m.nextDueAt)}`,
-      ),
     );
+    const timings = el("dl");
+    timings.className = "monitor-timings";
+    for (const [label, value] of [
+      ["最近嘗試", m.lastAttemptAt],
+      ["最近成功", m.lastSuccessAt],
+      ["最近變更", m.lastChangeAt],
+      ["預計下次檢查", m.nextDueAt],
+    ] as const) {
+      const item = el("div");
+      item.append(
+        el("dt", label),
+        el(
+          "dd",
+          label === "預計下次檢查" && !m.enabled ? "已暫停" : time(value),
+        ),
+      );
+      timings.append(item);
+    }
+    card.append(timings);
     if (j && Date.now() > j.deadlineAt)
       card.append(el("p", "工作已逾時，等待 dispatcher 清理。"));
     if (m.lastError)
@@ -112,16 +156,29 @@ function dashboard() {
       await refresh();
     });
     run.disabled = !!j;
-    card.append(
-      run,
-      button(m.enabled ? "暫停" : "恢復", async () => {
+    const footer = el("footer");
+    footer.className = "monitor-footer";
+    const actions = el("div");
+    actions.className = "monitor-actions";
+    const toggle = button(m.enabled ? "已啟用" : "已暫停", async () => {
+      toggle.disabled = true;
+      try {
         await send({
           type: m.enabled ? "PAUSE_MONITOR" : "RESUME_MONITOR",
           id: m.id,
         });
         await refresh();
-      }),
-      button("編輯", () => form(m)),
+      } finally {
+        toggle.disabled = false;
+      }
+    });
+    toggle.className = "monitor-switch";
+    toggle.setAttribute("role", "switch");
+    toggle.setAttribute("aria-checked", String(m.enabled));
+    toggle.setAttribute("aria-label", `${m.name}：啟用監控`);
+    identity.append(toggle);
+    actions.append(
+      run,
       button("開啟網站", () => chrome.tabs.create({ url: m.url })),
       button("歷史", () => history(m.id)),
       button("重新設定基準", async () => {
@@ -130,15 +187,18 @@ function dashboard() {
           await refresh();
         }
       }),
-      button("刪除", async () => {
-        if (confirm("刪除此任務及所有歷史？")) {
-          await send({ type: "DELETE_MONITOR", id: m.id });
-          await refresh();
-        }
-      }),
     );
+    const remove = button("刪除任務", async () => {
+      if (confirm("刪除此任務及所有歷史？")) {
+        await send({ type: "DELETE_MONITOR", id: m.id });
+        await refresh();
+      }
+    });
+    remove.className = "delete-link";
+    footer.append(actions, remove);
+    card.append(footer);
     if (m.health === "needs_permission")
-      card.append(
+      card.insertBefore(
         button("重新授權", async () => {
           if (
             await chrome.permissions.request({ origins: [m.origin + "/*"] })
@@ -147,6 +207,7 @@ function dashboard() {
             await refresh();
           }
         }),
+        footer,
       );
     app.append(card);
   }
@@ -314,6 +375,8 @@ function form(m?: Monitor) {
   let tabId: number | undefined =
     draft?.url === source.url ? draft.tabId : undefined;
   let previewKey = "";
+  let previewBusy = false;
+  let saving = false;
   const preview = el("pre");
   const read = (): Config =>
     config({
@@ -353,36 +416,81 @@ function form(m?: Monitor) {
     const u = new URL(fields.url.value);
     if (!["http:", "https:"].includes(u.protocol))
       throw Error("UNSUPPORTED_URL");
+    previewKey = "";
+    updateSave();
     tabId = (await chrome.tabs.create({ url: u.href })).id;
     preview.textContent =
       "已開啟設定分頁。請在該頁點擊擴充功能來視覺化選區，或回此頁進階編輯 selector。";
   });
   open.type = "button";
-  f.append(open);
+  const selectionTools = el("fieldset");
+  selectionTools.className = "selection-tools";
+  selectionTools.append(el("legend", "網頁與選區設定"), open);
   const select = button("在設定分頁重新選區", async () => {
     if (!tabId) throw Error("請先開啟設定網頁");
     await chrome.tabs.update(tabId, { active: true });
     await send({ type: "START_PICKER", tabId, monitorId: m?.id });
   });
   select.type = "button";
-  f.append(select);
+  selectionTools.append(select);
+  f.append(selectionTools);
   const pre = button("授權並驗證預覽", async () => {
     const c = read();
-    if (!(await chrome.permissions.request({ origins: [c.origin + "/*"] })))
-      throw Error("PERMISSION_REQUIRED");
-    if (!tabId) throw Error("請先開啟設定網頁");
-    const r = await send({ type: "PREVIEW_SELECTION", tabId, config: c });
-    if (!r.ok) throw Error(r.error);
-    preview.textContent = JSON.stringify(r.content, null, 2);
-    previewKey = JSON.stringify(c);
+    const requestedKey = JSON.stringify(c);
+    previewKey = "";
+    previewBusy = true;
+    pre.disabled = true;
+    message.textContent = "";
+    updateSave();
+    try {
+      if (!(await chrome.permissions.request({ origins: [c.origin + "/*"] })))
+        throw Error("PERMISSION_REQUIRED");
+      if (!tabId) throw Error("請先開啟設定網頁");
+      const r = await send({ type: "PREVIEW_SELECTION", tabId, config: c });
+      if (!r.ok) throw Error(r.error);
+      preview.textContent = JSON.stringify(r.content, null, 2);
+      previewKey = requestedKey;
+    } finally {
+      previewBusy = false;
+      pre.disabled = false;
+      updateSave();
+    }
   });
   pre.type = "button";
   f.append(pre, preview);
   const save = el("button", "授權並儲存");
   save.type = "submit";
-  f.append(save);
+  const saveHint = el("p");
+  saveHint.className = "save-hint";
+  saveHint.id = "save-hint";
+  saveHint.setAttribute("role", "status");
+  save.setAttribute("aria-describedby", saveHint.id);
+  f.append(saveHint, save);
+  function updateSave() {
+    let needsPreview = true;
+    let valid = false;
+    try {
+      const c = read();
+      valid = true;
+      needsPreview = requiresBaseline(c) && previewKey !== JSON.stringify(c);
+    } catch {}
+    save.disabled = !valid || needsPreview || previewBusy || saving;
+    saveHint.textContent = previewBusy
+      ? "正在驗證預覽…"
+      : !valid
+        ? "請完成有效的任務設定，再驗證預覽。"
+        : needsPreview
+          ? "請先按「授權並驗證預覽」，成功後才能儲存。"
+          : "設定已可儲存。";
+  }
+  f.addEventListener("input", updateSave);
+  f.addEventListener("change", updateSave);
+  updateSave();
   f.onsubmit = (e) => {
     e.preventDefault();
+    updateSave();
+    if (save.disabled) return;
+    message.textContent = "";
     let c: Config;
     try {
       c = read();
@@ -390,6 +498,8 @@ function form(m?: Monitor) {
       error(err);
       return;
     } // request must start directly in this user gesture.
+    saving = true;
+    updateSave();
     const granted = chrome.permissions.request({ origins: [c.origin + "/*"] });
     void granted
       .then(async (ok) => {
@@ -412,14 +522,41 @@ function form(m?: Monitor) {
         editing = false;
         await refresh();
       })
-      .catch(error);
+      .catch(error)
+      .finally(() => {
+        saving = false;
+        updateSave();
+      });
   };
   const cancel = button("返回", () => {
     editing = false;
     dashboard();
   });
   cancel.type = "button";
-  f.append(cancel);
+  cancel.className = "back-icon";
+  cancel.title = "返回任務列表";
+  cancel.setAttribute("aria-label", "返回任務列表");
+  cancel.textContent = "";
+  const backSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  backSvg.setAttribute("viewBox", "0 0 24 24");
+  backSvg.setAttribute("aria-hidden", "true");
+  backSvg.setAttribute("fill", "none");
+  backSvg.setAttribute("stroke", "currentColor");
+  backSvg.setAttribute("stroke-width", "2");
+  backSvg.setAttribute("stroke-linecap", "round");
+  backSvg.setAttribute("stroke-linejoin", "round");
+  const backPath = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "path",
+  );
+  backPath.setAttribute("d", "M19 12H5 M12 5l-7 7 7 7");
+  backSvg.append(backPath);
+  cancel.append(backSvg);
+  const formHeading = el("div");
+  formHeading.className = "page-heading";
+  const title = app.querySelector("h1")!;
+  title.replaceWith(formHeading);
+  formHeading.append(cancel, title);
   app.append(f);
 }
 function history(id: string, eventId?: string) {
@@ -432,6 +569,21 @@ function history(id: string, eventId?: string) {
       void refresh();
     }),
   );
+  const markAll = button("全部標記已讀", async () => {
+    markAll.disabled = true;
+    try {
+      await send({ type: "MARK_ALL_EVENTS_READ", monitorId: id });
+      state = await send({ type: "STATE" });
+      history(id, eventId);
+    } finally {
+      markAll.disabled = false;
+    }
+  });
+  markAll.disabled = !(state.events as ChangeEvent[]).some(
+    (e) => e.monitorId === id && !e.readAt,
+  );
+  markAll.title = "將此任務的所有歷史紀錄標記為已讀";
+  app.append(markAll);
   const m = state.monitors.find((m: Monitor) => m.id === id);
   app.append(el("p", m?.name || id));
   const events = (state.events as ChangeEvent[])

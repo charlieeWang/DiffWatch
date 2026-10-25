@@ -242,7 +242,9 @@ async function dispatch() {
         await db.fail(j.runId, "TAB_CLOSED");
       }
     } else if (j.phase === "queued") safe(launch(j));
-    else await db.fail(j.runId, "WORKER_INTERRUPTED");
+    // Another dispatcher may observe a launch between its atomic claim and
+    // tabs.create completing. The persisted deadline handles abandoned launches.
+    else if (j.phase !== "opening") await db.fail(j.runId, "WORKER_INTERRUPTED");
   }
   for (const j of await db.acquire(sid)) safe(launch(j));
   await db.prune();
@@ -478,6 +480,22 @@ async function handle(raw: any, sender: chrome.runtime.MessageSender) {
     await db.mutate(raw.id, raw.type);
     if (raw.type !== "RUN_NOW") for (const j of jobs) await closeOwned(j);
     safe(dispatch());
+    return;
+  }
+  if (raw.type === "MARK_ALL_EVENTS_READ") {
+    if (typeof raw.monitorId !== "string" || !raw.monitorId)
+      throw Error("INVALID_ID");
+    await db.transaction(["changeEvents"], async (tx) => {
+      const store = tx.objectStore("changeEvents");
+      const readAt = Date.now();
+      for (const event of await db.request<ChangeEvent[]>(store.getAll())) {
+        if (event.monitorId === raw.monitorId && !event.readAt) {
+          event.readAt = readAt;
+          await db.request(store.put(event));
+        }
+      }
+    });
+    await badge();
     return;
   }
   if (raw.type === "MARK_EVENT_READ") {
