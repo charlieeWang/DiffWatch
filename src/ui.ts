@@ -1,5 +1,6 @@
 import {
   config,
+  urlOf,
   diff,
   type Config,
   type Monitor,
@@ -32,6 +33,49 @@ function error(e: unknown) {
   message.className = "error";
 }
 const time = (v?: number) => (v ? new Date(v).toLocaleString() : "—");
+function waitForPickerPage(tabId: number, origin: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const finish = (err?: Error) => {
+      clearTimeout(timeout);
+      chrome.tabs.onUpdated.removeListener(updated);
+      chrome.tabs.onRemoved.removeListener(removed);
+      err ? reject(err) : resolve();
+    };
+    const check = (tab: chrome.tabs.Tab) => {
+      if (
+        tab.url &&
+        tab.url !== "about:blank" &&
+        new URL(tab.url).origin !== origin
+      ) {
+        finish(Error("REDIRECTED_ORIGIN"));
+      } else if (
+        tab.status === "complete" &&
+        tab.url &&
+        new URL(tab.url).origin === origin
+      )
+        finish();
+    };
+    const updated = (
+      id: number,
+      _change: chrome.tabs.OnUpdatedInfo,
+      tab: chrome.tabs.Tab,
+    ) => {
+      if (id === tabId) check(tab);
+    };
+    const removed = (id: number) => {
+      if (id === tabId) finish(Error("設定分頁已關閉"));
+    };
+    const timeout = setTimeout(
+      () => finish(Error("網頁載入逾時，請稍後重試。")),
+      30000,
+    );
+    chrome.tabs.onUpdated.addListener(updated);
+    chrome.tabs.onRemoved.addListener(removed);
+    void chrome.tabs
+      .get(tabId)
+      .then(check, () => finish(Error("設定分頁已關閉")));
+  });
+}
 let state: any;
 let editing = false;
 const health: Record<string, string> = {
@@ -412,27 +456,32 @@ function form(m?: Monitor) {
     ].some(
       (k) => JSON.stringify((c as any)[k]) !== JSON.stringify((m as any)[k]),
     );
-  const open = button("開啟設定網頁", async () => {
-    const u = new URL(fields.url.value);
-    if (!["http:", "https:"].includes(u.protocol))
-      throw Error("UNSUPPORTED_URL");
+  const open = button("開啟網頁並選取區域", async () => {
+    const u = urlOf(fields.url.value);
+    // Start the optional permission request in this button's user gesture.
+    const permission = chrome.permissions.request({
+      origins: [u.origin + "/*"],
+    });
+    open.disabled = true;
     previewKey = "";
     updateSave();
-    tabId = (await chrome.tabs.create({ url: u.href })).id;
-    preview.textContent =
-      "已開啟設定分頁。請在該頁點擊擴充功能來視覺化選區，或回此頁進階編輯 selector。";
+    message.textContent = "";
+    try {
+      if (!(await permission)) throw Error("PERMISSION_REQUIRED");
+      preview.textContent = "正在開啟網頁，載入完成後會自動顯示選區工具…";
+      tabId = (await chrome.tabs.create({ url: u.href, active: true })).id;
+      if (tabId === undefined) throw Error("無法開啟設定分頁");
+      await waitForPickerPage(tabId, u.origin);
+      await send({ type: "START_PICKER", tabId, monitorId: m?.id });
+      preview.textContent = "選區工具已開啟，請直接在網頁選取監控範圍。";
+    } finally {
+      open.disabled = false;
+    }
   });
   open.type = "button";
   const selectionTools = el("fieldset");
   selectionTools.className = "selection-tools";
   selectionTools.append(el("legend", "網頁與選區設定"), open);
-  const select = button("在設定分頁重新選區", async () => {
-    if (!tabId) throw Error("請先開啟設定網頁");
-    await chrome.tabs.update(tabId, { active: true });
-    await send({ type: "START_PICKER", tabId, monitorId: m?.id });
-  });
-  select.type = "button";
-  selectionTools.append(select);
   f.append(selectionTools);
   const pre = button("授權並驗證預覽", async () => {
     const c = read();

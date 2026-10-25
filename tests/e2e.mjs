@@ -218,7 +218,7 @@ try {
     await saveButton.isDisabled(),
     "new task requires preview before saving",
   );
-  assert.equal(await editor.locator(".selection-tools button").count(), 2);
+  assert.equal(await editor.locator(".selection-tools button").count(), 1);
   assert(
     await editor.getByRole("button", { name: "返回任務列表" }).isVisible(),
   );

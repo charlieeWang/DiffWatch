@@ -108,6 +108,35 @@ function error(e) {
   message.className = "error";
 }
 var time = (v) => v ? new Date(v).toLocaleString() : "\u2014";
+function waitForPickerPage(tabId, origin) {
+  return new Promise((resolve, reject) => {
+    const finish = (err) => {
+      clearTimeout(timeout);
+      chrome.tabs.onUpdated.removeListener(updated);
+      chrome.tabs.onRemoved.removeListener(removed);
+      err ? reject(err) : resolve();
+    };
+    const check = (tab) => {
+      if (tab.url && tab.url !== "about:blank" && new URL(tab.url).origin !== origin) {
+        finish(Error("REDIRECTED_ORIGIN"));
+      } else if (tab.status === "complete" && tab.url && new URL(tab.url).origin === origin)
+        finish();
+    };
+    const updated = (id, _change, tab) => {
+      if (id === tabId) check(tab);
+    };
+    const removed = (id) => {
+      if (id === tabId) finish(Error("\u8A2D\u5B9A\u5206\u9801\u5DF2\u95DC\u9589"));
+    };
+    const timeout = setTimeout(
+      () => finish(Error("\u7DB2\u9801\u8F09\u5165\u903E\u6642\uFF0C\u8ACB\u7A0D\u5F8C\u91CD\u8A66\u3002")),
+      3e4
+    );
+    chrome.tabs.onUpdated.addListener(updated);
+    chrome.tabs.onRemoved.addListener(removed);
+    void chrome.tabs.get(tabId).then(check, () => finish(Error("\u8A2D\u5B9A\u5206\u9801\u5DF2\u95DC\u9589")));
+  });
+}
 var state;
 var editing = false;
 var health = {
@@ -455,26 +484,31 @@ function form(m) {
   ].some(
     (k) => JSON.stringify(c[k]) !== JSON.stringify(m[k])
   );
-  const open = button("\u958B\u555F\u8A2D\u5B9A\u7DB2\u9801", async () => {
-    const u = new URL(fields.url.value);
-    if (!["http:", "https:"].includes(u.protocol))
-      throw Error("UNSUPPORTED_URL");
+  const open = button("\u958B\u555F\u7DB2\u9801\u4E26\u9078\u53D6\u5340\u57DF", async () => {
+    const u = urlOf(fields.url.value);
+    const permission = chrome.permissions.request({
+      origins: [u.origin + "/*"]
+    });
+    open.disabled = true;
     previewKey = "";
     updateSave();
-    tabId = (await chrome.tabs.create({ url: u.href })).id;
-    preview.textContent = "\u5DF2\u958B\u555F\u8A2D\u5B9A\u5206\u9801\u3002\u8ACB\u5728\u8A72\u9801\u9EDE\u64CA\u64F4\u5145\u529F\u80FD\u4F86\u8996\u89BA\u5316\u9078\u5340\uFF0C\u6216\u56DE\u6B64\u9801\u9032\u968E\u7DE8\u8F2F selector\u3002";
+    message.textContent = "";
+    try {
+      if (!await permission) throw Error("PERMISSION_REQUIRED");
+      preview.textContent = "\u6B63\u5728\u958B\u555F\u7DB2\u9801\uFF0C\u8F09\u5165\u5B8C\u6210\u5F8C\u6703\u81EA\u52D5\u986F\u793A\u9078\u5340\u5DE5\u5177\u2026";
+      tabId = (await chrome.tabs.create({ url: u.href, active: true })).id;
+      if (tabId === void 0) throw Error("\u7121\u6CD5\u958B\u555F\u8A2D\u5B9A\u5206\u9801");
+      await waitForPickerPage(tabId, u.origin);
+      await send({ type: "START_PICKER", tabId, monitorId: m?.id });
+      preview.textContent = "\u9078\u5340\u5DE5\u5177\u5DF2\u958B\u555F\uFF0C\u8ACB\u76F4\u63A5\u5728\u7DB2\u9801\u9078\u53D6\u76E3\u63A7\u7BC4\u570D\u3002";
+    } finally {
+      open.disabled = false;
+    }
   });
   open.type = "button";
   const selectionTools = el("fieldset");
   selectionTools.className = "selection-tools";
   selectionTools.append(el("legend", "\u7DB2\u9801\u8207\u9078\u5340\u8A2D\u5B9A"), open);
-  const select = button("\u5728\u8A2D\u5B9A\u5206\u9801\u91CD\u65B0\u9078\u5340", async () => {
-    if (!tabId) throw Error("\u8ACB\u5148\u958B\u555F\u8A2D\u5B9A\u7DB2\u9801");
-    await chrome.tabs.update(tabId, { active: true });
-    await send({ type: "START_PICKER", tabId, monitorId: m?.id });
-  });
-  select.type = "button";
-  selectionTools.append(select);
   f.append(selectionTools);
   const pre = button("\u6388\u6B0A\u4E26\u9A57\u8B49\u9810\u89BD", async () => {
     const c = read();
