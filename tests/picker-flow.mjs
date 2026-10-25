@@ -22,7 +22,9 @@ const server = http.createServer((req, res) =>
       res.end();
     } else {
       res.setHeader("content-type", "text/html");
-      res.end('<!doctype html><h1 id="region">Picker flow test</h1>');
+      res.end(
+        '<!doctype html><meta charset="utf-8"><main id="region" style="padding:24px;border:2px solid teal;max-width:600px"><h1>測試商品</h1><p id="price">價格 100</p><span id="clock">倒數 10</span><span id="ad">廣告</span></main>',
+      );
     }
   }, 500),
 );
@@ -53,7 +55,65 @@ try {
   const opened = ctx.waitForEvent("page");
   await launch.click();
   const site = await opened;
-  await site.getByRole("textbox", { name: "CSS selector" }).waitFor();
+  const next = site.getByRole("button", { name: "下一步：設定監控" });
+  const select = site.getByRole("button", {
+    name: "選取監控區域",
+    exact: true,
+  });
+  const ignore = site.getByRole("button", { name: "忽略區塊", exact: true });
+  await select.waitFor();
+  assert(await ignore.isDisabled());
+  assert(await next.isDisabled());
+  assert.equal(
+    await site.getByRole("textbox", { name: "CSS selector" }).isVisible(),
+    false,
+  );
+  await site.locator("#region").click({ position: { x: 5, y: 5 } });
+  assert(await next.isEnabled());
+  const preview = site.locator("[data-dom-watch-overlay]").locator(".preview");
+  assert((await preview.innerText()).includes("倒數 10"));
+  await ignore.click();
+  await site.locator("#clock").click();
+  await site.locator("#ad").click();
+  assert.equal(await ignore.getAttribute("aria-pressed"), "true");
+  assert.equal(
+    await site
+      .locator("[data-dom-watch-overlay]")
+      .locator(".ignored li")
+      .count(),
+    2,
+  );
+  assert(!(await preview.innerText()).includes("倒數 10"));
+  await site
+    .getByRole("button", { name: "恢復忽略區塊 1", exact: true })
+    .click();
+  assert((await preview.innerText()).includes("倒數 10"));
+  await site.getByText("進階設定", { exact: true }).click();
+  await site.getByRole("textbox", { name: "CSS selector" }).fill("#missing");
+  assert(await next.isDisabled());
+  assert(await ignore.isDisabled());
+  assert((await preview.innerText()).includes("無法預覽"));
+  await site.getByRole("textbox", { name: "CSS selector" }).fill("#region");
+  assert(await next.isEnabled());
+  await site.getByText("進階設定", { exact: true }).click();
+  await site.screenshot({
+    path: "work/picker-simple-desktop.png",
+    fullPage: true,
+  });
+  await site.setViewportSize({ width: 390, height: 844 });
+  assert(
+    await site
+      .locator("[data-dom-watch-overlay]")
+      .locator("aside")
+      .evaluate((n) => n.getBoundingClientRect().right <= innerWidth),
+  );
+  await site.screenshot({
+    path: "work/picker-simple-mobile.png",
+    fullPage: true,
+  });
+  console.log(
+    "PASS: two modes, multiple ignored blocks, undo, preview, invalidation, advanced settings and mobile layout",
+  );
   assert.equal(await site.evaluate(() => document.readyState), "complete");
   await p.waitForFunction(
     () => !document.querySelector(".selection-tools button").disabled,

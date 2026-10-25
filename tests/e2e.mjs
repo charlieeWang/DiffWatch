@@ -200,13 +200,12 @@ try {
       .then((t) => t[0].id),
   );
   await send({ type: "START_PICKER", tabId });
+  await site.getByText("進階設定", { exact: true }).click();
   await site.getByRole("textbox", { name: "CSS selector" }).fill("#products");
-  await site
-    .getByRole("button", { name: "點選忽略子區域", exact: true })
-    .click();
+  await site.getByRole("button", { name: "忽略區塊", exact: true }).click();
   await site.locator(".countdown").click();
   const nextPage = ctx.waitForEvent("page");
-  await site.getByRole("button", { name: "確認並設定任務" }).click();
+  await site.getByRole("button", { name: "下一步：設定監控" }).click();
   const editor = await nextPage;
   await editor.waitForLoadState();
   await editor.locator("input[name=name]").fill("視覺選取測試");

@@ -184,7 +184,7 @@ capture.startCapture 接 CAPTURE_START，以 runId 防重複，等 settleDelayMs
 
 setTimeout 只用於單次取樣，不是排程唯一來源；背景節流可能延遲。完成訊息是獨立事件，可喚醒 worker，不靠原 Promise 常駐。PREVIEW 只擷取一次，PROBE 查 ownership；安裝旗標避免重複 listener。執行中 runs 與 ownership runs 分開，以便完成後／恢復時仍可證明分頁所有權。
 
-picker 提供高亮、攔截點擊、父／第一子元素、selector、忽略子區域、預覽、確認／取消／Esc，重新啟動清掉舊 overlay／listener。selector 優先唯一非隨機 id、穩定屬性、語意 class，最後 nth-of-type 路徑，使用 CSS.escape。
+picker 的主要操作只有「選取監控區域」與「忽略區塊」兩種模式。忽略模式可連續排除多個子區塊，清單能個別恢復。淡綠色區塊呈現監控預覽，底部「下一步：設定監控」前往任務表單，右上關閉／Esc 取消。CSS 規則、擴大／縮小範圍與恢復全部藏在進階設定；重新啟動會清掉舊 overlay／listener。selector 優先唯一非隨機 id、穩定屬性、語意 class，最後 nth-of-type 路徑，使用 CSS.escape。
 
 位置 selector 較脆弱，失配要報錯，不能偷換目標。工具 UI 自己用了 Shadow DOM，不代表支援網站 Shadow DOM；網站仍只取主文件 light DOM。確認送 PICKED 草稿，不建正式基準。
 
