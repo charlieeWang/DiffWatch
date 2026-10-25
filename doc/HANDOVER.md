@@ -330,6 +330,10 @@ YouTube 等動態網站背景載入可能不同，觀看數／留言／lazy load
 
 ## 15. 官方延伸閱讀
 
+### 歷史管理補充（2026-10-25）
+
+history 頁的「清除歷史紀錄」經確認後送 CLEAR_HISTORY，只清除目前任務。storage.clearHistory 在同一交易刪除事件、對應 outbox 與該任務無引用快照，保留當前基準與其他任務；背景重算 badge。清除不停止進行中的監控，之後有新變更仍會建立新事件。每筆右上角綠字「已讀」／紅字「未讀」，已讀紀錄不再顯示單筆標記按鈕。
+
 本文件描述目前程式，不取代後續 API 版本核對。
 
 - [Manifest](https://developer.chrome.com/docs/extensions/reference/manifest)

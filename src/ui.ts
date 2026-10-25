@@ -584,6 +584,26 @@ function history(id: string, eventId?: string) {
   );
   markAll.title = "將此任務的所有歷史紀錄標記為已讀";
   app.append(markAll);
+  const clearHistory = button("清除歷史紀錄", async () => {
+    if (
+      !confirm(
+        "確定清除此任務的全部歷史紀錄？此操作無法復原，目前監控基準會保留。",
+      )
+    )
+      return;
+    clearHistory.disabled = true;
+    try {
+      await send({ type: "CLEAR_HISTORY", monitorId: id });
+      state = await send({ type: "STATE" });
+      history(id);
+    } finally {
+      clearHistory.disabled = false;
+    }
+  });
+  clearHistory.disabled = !(state.events as ChangeEvent[]).some(
+    (e) => e.monitorId === id,
+  );
+  app.append(clearHistory);
   const m = state.monitors.find((m: Monitor) => m.id === id);
   app.append(el("p", m?.name || id));
   const events = (state.events as ChangeEvent[])
@@ -592,17 +612,23 @@ function history(id: string, eventId?: string) {
   if (!events.length) app.append(el("p", "尚無變更事件。建立基準不算變更。"));
   for (const e of events) {
     const card = el("article");
-    card.append(
-      el(
-        "h2",
-        `${time(e.detectedAt)} · 規則 v${e.configVersion}${e.readAt ? "" : " · 未讀"}`,
-      ),
-      button("標記已讀", async () => {
-        await send({ type: "MARK_EVENT_READ", id: e.id });
-        e.readAt = Date.now();
-        history(id, eventId);
-      }),
+    const heading = el("header");
+    heading.className = "history-heading";
+    const readStatus = el("span", e.readAt ? "已讀" : "未讀");
+    readStatus.className = e.readAt ? "history-read" : "history-unread";
+    heading.append(
+      el("h2", `${time(e.detectedAt)} · 規則 v${e.configVersion}`),
+      readStatus,
     );
+    card.append(heading);
+    if (!e.readAt)
+      card.append(
+        button("標記已讀", async () => {
+          await send({ type: "MARK_EVENT_READ", id: e.id });
+          e.readAt = Date.now();
+          history(id, eventId);
+        }),
+      );
     const before = state.snapshots.find(
         (s: Snapshot) => s.id === e.beforeSnapshotId,
       ),

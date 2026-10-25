@@ -26,6 +26,50 @@ const content = (text: string): Content => ({
   links: [],
   images: [],
 });
+test("clear history preserves baseline, other tasks, and future comparisons", async () => {
+  await db.clear();
+  const m = await db.save(c);
+  const j = (await db.acquire("session"))[0];
+  await db.commit(j.runId, content("A"), c.url);
+  await db.commit((await due(m.id)).runId, content("B"), c.url);
+  const baseline = (await db.get<Monitor>("monitors", m.id))!
+    .baselineSnapshotId;
+  const other = await db.save({ ...c, url: "https://other.example/" });
+  await db.mutate(other.id, "PAUSE_MONITOR");
+  await db.put("changeEvents", {
+    id: "other-event",
+    monitorId: other.id,
+    runId: "other-run",
+    beforeSnapshotId: "other-snapshot",
+    afterSnapshotId: "other-snapshot",
+    detectedAt: Date.now(),
+  });
+  await db.put("notificationOutbox", {
+    eventId: "other-event",
+    state: "pending",
+    attempts: 0,
+  });
+  await db.put("snapshots", { id: "other-snapshot", monitorId: other.id });
+  await db.clearHistory(m.id);
+  assert.equal(
+    (await db.get<Monitor>("monitors", m.id))!.baselineSnapshotId,
+    baseline,
+  );
+  assert(await db.get("snapshots", baseline!));
+  assert.equal(
+    (await db.all<ChangeEvent>("changeEvents")).filter(
+      (e) => e.monitorId === m.id,
+    ).length,
+    0,
+  );
+  assert.equal((await db.all("notificationOutbox")).length, 1);
+  assert(await db.get("snapshots", "other-snapshot"));
+  assert.equal((await db.all("snapshots")).length, 2);
+  await db.commit((await due(m.id)).runId, content("B"), c.url);
+  assert.equal((await db.all("changeEvents")).length, 1);
+  await db.commit((await due(m.id)).runId, content("C"), c.url);
+  assert.equal((await db.all("changeEvents")).length, 2);
+});
 async function due(id: string) {
   await db.transaction(["monitors"], async (tx) => {
     const s = tx.objectStore("monitors");

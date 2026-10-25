@@ -244,7 +244,8 @@ async function dispatch() {
     } else if (j.phase === "queued") safe(launch(j));
     // Another dispatcher may observe a launch between its atomic claim and
     // tabs.create completing. The persisted deadline handles abandoned launches.
-    else if (j.phase !== "opening") await db.fail(j.runId, "WORKER_INTERRUPTED");
+    else if (j.phase !== "opening")
+      await db.fail(j.runId, "WORKER_INTERRUPTED");
   }
   for (const j of await db.acquire(sid)) safe(launch(j));
   await db.prune();
@@ -495,6 +496,13 @@ async function handle(raw: any, sender: chrome.runtime.MessageSender) {
         }
       }
     });
+    await badge();
+    return;
+  }
+  if (raw.type === "CLEAR_HISTORY") {
+    if (typeof raw.monitorId !== "string" || !raw.monitorId)
+      throw Error("INVALID_ID");
+    await db.clearHistory(raw.monitorId);
     await badge();
     return;
   }

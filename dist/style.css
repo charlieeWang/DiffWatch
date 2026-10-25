@@ -4,6 +4,28 @@
   background: #f1f5f4;
   line-height: 1.6;
 }
+.history-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.history-heading h2 {
+  margin-top: 0;
+  min-width: 0;
+}
+.history-read,
+.history-unread {
+  white-space: nowrap;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.history-read {
+  color: #146e43;
+}
+.history-unread {
+  color: #b3261e;
+}
 .selection-tools {
   margin: 24px 0;
   padding: 16px;

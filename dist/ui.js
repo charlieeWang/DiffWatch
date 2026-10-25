@@ -614,23 +614,47 @@ function history(id, eventId) {
   );
   markAll.title = "\u5C07\u6B64\u4EFB\u52D9\u7684\u6240\u6709\u6B77\u53F2\u7D00\u9304\u6A19\u8A18\u70BA\u5DF2\u8B80";
   app.append(markAll);
+  const clearHistory = button("\u6E05\u9664\u6B77\u53F2\u7D00\u9304", async () => {
+    if (!confirm(
+      "\u78BA\u5B9A\u6E05\u9664\u6B64\u4EFB\u52D9\u7684\u5168\u90E8\u6B77\u53F2\u7D00\u9304\uFF1F\u6B64\u64CD\u4F5C\u7121\u6CD5\u5FA9\u539F\uFF0C\u76EE\u524D\u76E3\u63A7\u57FA\u6E96\u6703\u4FDD\u7559\u3002"
+    ))
+      return;
+    clearHistory.disabled = true;
+    try {
+      await send({ type: "CLEAR_HISTORY", monitorId: id });
+      state = await send({ type: "STATE" });
+      history(id);
+    } finally {
+      clearHistory.disabled = false;
+    }
+  });
+  clearHistory.disabled = !state.events.some(
+    (e) => e.monitorId === id
+  );
+  app.append(clearHistory);
   const m = state.monitors.find((m2) => m2.id === id);
   app.append(el("p", m?.name || id));
   const events = state.events.filter((e) => e.monitorId === id && (!eventId || e.id === eventId)).sort((a, b) => b.detectedAt - a.detectedAt);
   if (!events.length) app.append(el("p", "\u5C1A\u7121\u8B8A\u66F4\u4E8B\u4EF6\u3002\u5EFA\u7ACB\u57FA\u6E96\u4E0D\u7B97\u8B8A\u66F4\u3002"));
   for (const e of events) {
     const card = el("article");
-    card.append(
-      el(
-        "h2",
-        `${time(e.detectedAt)} \xB7 \u898F\u5247 v${e.configVersion}${e.readAt ? "" : " \xB7 \u672A\u8B80"}`
-      ),
-      button("\u6A19\u8A18\u5DF2\u8B80", async () => {
-        await send({ type: "MARK_EVENT_READ", id: e.id });
-        e.readAt = Date.now();
-        history(id, eventId);
-      })
+    const heading = el("header");
+    heading.className = "history-heading";
+    const readStatus = el("span", e.readAt ? "\u5DF2\u8B80" : "\u672A\u8B80");
+    readStatus.className = e.readAt ? "history-read" : "history-unread";
+    heading.append(
+      el("h2", `${time(e.detectedAt)} \xB7 \u898F\u5247 v${e.configVersion}`),
+      readStatus
     );
+    card.append(heading);
+    if (!e.readAt)
+      card.append(
+        button("\u6A19\u8A18\u5DF2\u8B80", async () => {
+          await send({ type: "MARK_EVENT_READ", id: e.id });
+          e.readAt = Date.now();
+          history(id, eventId);
+        })
+      );
     const before = state.snapshots.find(
       (s) => s.id === e.beforeSnapshotId
     ), after = state.snapshots.find((s) => s.id === e.afterSnapshotId);

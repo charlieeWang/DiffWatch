@@ -364,6 +364,36 @@ async function prune() {
     }
   );
 }
+async function clearHistory(monitorId) {
+  return transaction(
+    ["monitors", "snapshots", "changeEvents", "notificationOutbox"],
+    async (tx) => {
+      if (!await request(tx.objectStore("monitors").get(monitorId)))
+        throw Error("MONITOR_DELETED");
+      const events = tx.objectStore("changeEvents");
+      for (const event of await request(events.getAll())) {
+        if (event.monitorId === monitorId) {
+          await request(events.delete(event.id));
+          await request(tx.objectStore("notificationOutbox").delete(event.id));
+        }
+      }
+      const refs = new Set(
+        (await request(tx.objectStore("monitors").getAll())).map(
+          (m) => m.baselineSnapshotId
+        )
+      );
+      for (const event of await request(events.getAll())) {
+        refs.add(event.beforeSnapshotId);
+        refs.add(event.afterSnapshotId);
+      }
+      const snapshots = tx.objectStore("snapshots");
+      for (const snapshot of await request(snapshots.getAll())) {
+        if (snapshot.monitorId === monitorId && !refs.has(snapshot.id))
+          await request(snapshots.delete(snapshot.id));
+      }
+    }
+  );
+}
 async function commit(runId, content, finalUrl) {
   const hash = await digest(content);
   return transaction(
@@ -680,7 +710,8 @@ async function dispatch() {
         await fail(j.runId, "TAB_CLOSED");
       }
     } else if (j.phase === "queued") safe(launch(j));
-    else if (j.phase !== "opening") await fail(j.runId, "WORKER_INTERRUPTED");
+    else if (j.phase !== "opening")
+      await fail(j.runId, "WORKER_INTERRUPTED");
   }
   for (const j of await acquire(sid)) safe(launch(j));
   await prune();
@@ -875,6 +906,13 @@ async function handle(raw, sender) {
         }
       }
     });
+    await badge();
+    return;
+  }
+  if (raw.type === "CLEAR_HISTORY") {
+    if (typeof raw.monitorId !== "string" || !raw.monitorId)
+      throw Error("INVALID_ID");
+    await clearHistory(raw.monitorId);
     await badge();
     return;
   }

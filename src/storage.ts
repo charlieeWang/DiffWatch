@@ -341,6 +341,37 @@ export async function prune() {
     },
   );
 }
+export async function clearHistory(monitorId: string) {
+  return transaction(
+    ["monitors", "snapshots", "changeEvents", "notificationOutbox"],
+    async (tx) => {
+      if (!(await request(tx.objectStore("monitors").get(monitorId))))
+        throw Error("MONITOR_DELETED");
+      const events = tx.objectStore("changeEvents");
+      for (const event of await request<ChangeEvent[]>(events.getAll())) {
+        if (event.monitorId === monitorId) {
+          await request(events.delete(event.id));
+          await request(tx.objectStore("notificationOutbox").delete(event.id));
+        }
+      }
+      // Retain every current baseline and snapshots still referenced by any event.
+      const refs = new Set(
+        (await request<Monitor[]>(tx.objectStore("monitors").getAll())).map(
+          (m) => m.baselineSnapshotId,
+        ),
+      );
+      for (const event of await request<ChangeEvent[]>(events.getAll())) {
+        refs.add(event.beforeSnapshotId);
+        refs.add(event.afterSnapshotId);
+      }
+      const snapshots = tx.objectStore("snapshots");
+      for (const snapshot of await request<Snapshot[]>(snapshots.getAll())) {
+        if (snapshot.monitorId === monitorId && !refs.has(snapshot.id))
+          await request(snapshots.delete(snapshot.id));
+      }
+    },
+  );
+}
 export async function commit(
   runId: string,
   content: Content,
