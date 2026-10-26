@@ -415,10 +415,7 @@ function form(m) {
   advanced.className = "form-advanced";
   advanced.append(
     el("summary", "\u9032\u968E\u8A2D\u5B9A"),
-    el(
-      "p",
-      "\u4EE5\u4E0B\u898F\u5247\u6703\u5728\u9078\u5340\u6642\u81EA\u52D5\u7522\u751F\u3002\u82E5\u624B\u52D5\u4FEE\u6539\uFF0C\u9700\u8981\u91CD\u65B0\u9A57\u8B49\u9810\u89BD\u3002"
-    )
+    el("p", "\u4EE5\u4E0B\u898F\u5247\u6703\u5728\u9078\u5340\u6642\u81EA\u52D5\u7522\u751F\u3002\u82E5\u624B\u52D5\u4FEE\u6539\uFF0C\u9700\u8981\u91CD\u65B0\u9A57\u8B49\u9810\u89BD\u3002")
   );
   const explain = (input, text) => {
     const help = el("small", text);
@@ -434,19 +431,13 @@ function form(m) {
     "text",
     advanced
   );
-  explain(
-    rootRule,
-    "\u7528\u4F86\u627E\u5230\u4F60\u9078\u53D6\u7684\u76E3\u63A7\u7BC4\u570D\u3002"
-  );
+  explain(rootRule, "\u7528\u4F86\u627E\u5230\u4F60\u9078\u53D6\u7684\u76E3\u63A7\u7BC4\u570D\u3002");
   const ignoreLabel = el("label", "\u4E0D\u6BD4\u8F03\u7684\u5340\u584A\uFF08CSS\uFF0C\u6BCF\u884C\u4E00\u500B\uFF09"), ignore = el("textarea");
   ignore.value = source.ignoreSelectors.join("\n");
   ignore.name = "ignoreSelectors";
   ignoreLabel.append(ignore);
   advanced.append(ignoreLabel);
-  explain(
-    ignore,
-    "\u5728\u76E3\u63A7\u7BC4\u570D\u9700\u8981\u5FFD\u7565\u7684\u5340\u584A\uFF1B\u82E5\u70BA\u7A7A\u5247\u8868\u793A\u6C92\u6709\u9700\u8981\u6392\u9664\u7684\u5340\u57DF\u3002"
-  );
+  explain(ignore, "\u5728\u76E3\u63A7\u7BC4\u570D\u9700\u8981\u5FFD\u7565\u7684\u5340\u584A\uFF1B\u82E5\u70BA\u7A7A\u5247\u8868\u793A\u6C92\u6709\u9700\u8981\u6392\u9664\u7684\u5340\u57DF\u3002");
   fields.ignoreSelectors = ignore;
   const interval = field(
     "intervalMinutes",
@@ -468,7 +459,7 @@ function form(m) {
   f.append(intervals);
   const delay = field(
     "settleDelayMs",
-    "\u7DB2\u9801\u958B\u555F\u5F8C\uFF0C\u518D\u7B49\u5E7E\u79D2\u6AA2\u67E5\uFF080\u201330\uFF09",
+    "\u7DB2\u9801\u958B\u555F\u5F8C\uFF0C\u5EF6\u9072\u5E7E\u79D2\u5F8C\u518D\u6AA2\u67E5\uFF080\u201330\uFF09",
     String(source.settleDelayMs / 1e3),
     "number"
   );
@@ -477,7 +468,7 @@ function form(m) {
   delay.step = "0.001";
   const readyRule = field(
     "readinessSelector",
-    "\u7B49\u9019\u500B\u5340\u584A\u51FA\u73FE\u624D\u958B\u59CB\uFF08CSS\uFF0C\u9078\u586B\uFF09",
+    "\u7B49\u5F85\u6B64\u5340\u584A\u51FA\u73FE\u624D\u6AA2\u67E5\uFF08CSS\uFF0C\u9078\u586B\uFF09",
     source.readinessSelector || "",
     "text",
     advanced
@@ -505,20 +496,82 @@ function form(m) {
   updateRegionSummary();
   f.addEventListener("input", updateRegionSummary);
   const checks = {};
+  const capturePanel = el("section");
+  capturePanel.className = "capture-preview";
+  capturePanel.append(el("h2", "\u8981\u6BD4\u8F03\u54EA\u4E9B\u5167\u5BB9\uFF1F"));
+  f.append(capturePanel);
+  const captureChoices = el("div");
+  captureChoices.className = "capture-choices";
+  capturePanel.append(captureChoices);
   for (const [key, label, value] of [
     ["text", "\u6587\u5B57", source.captureOptions.text],
     ["links", "\u9023\u7D50", source.captureOptions.links],
     ["images", "\u5716\u7247\u7DB2\u5740", source.captureOptions.images],
     ["allowEmpty", "\u5141\u8A31\u7A7A\u5167\u5BB9", source.allowEmpty],
-    ["notifications", "\u684C\u9762\u8B8A\u66F4\u901A\u77E5", source.notifications]
+    ["notifications", "\u684C\u9762\u901A\u77E5", source.notifications]
   ]) {
     const l = el("label"), i = el("input");
     i.type = "checkbox";
     i.checked = value;
+    i.name = key;
     checks[key] = i;
     l.append(i, document.createTextNode(label));
-    f.append(l);
+    if (["text", "links", "images"].includes(key)) captureChoices.append(l);
+    else f.append(l);
+    if (key === "allowEmpty")
+      explain(
+        i,
+        "\u672A\u52FE\u9078\u6642\uFF0C\u5982\u679C\u6C92\u6709\u6293\u5230\u4EFB\u4F55\u5DF2\u52FE\u9078\u7684\u5167\u5BB9\uFF0C\u6703\u8996\u70BA\u6AA2\u67E5\u5931\u6557\u4E26\u4FDD\u7559\u539F\u57FA\u6E96\uFF0C\u907F\u514D\u7DB2\u9801\u9084\u6C92\u8F09\u597D\u5C31\u8AA4\u5831\u3002\u52FE\u9078\u5F8C\uFF0C\u7A7A\u767D\u4E5F\u6703\u7576\u6210\u6709\u6548\u7D50\u679C\uFF0C\u53EF\u80FD\u8A18\u9304\u70BA\u5167\u5BB9\u5DF2\u88AB\u6E05\u7A7A\u3002\u4E00\u822C\u5EFA\u8B70\u4FDD\u6301\u95DC\u9589\u3002"
+      );
   }
+  let sample = m ? state.snapshots.find((s) => s.id === m.baselineSnapshotId) : void 0;
+  const storedSample = sample;
+  let sampleConfig = JSON.stringify([
+    m?.url ?? source.url,
+    m?.selector ?? source.selector,
+    m?.ignoreSelectors ?? source.ignoreSelectors
+  ]);
+  let sampleLabel = storedSample ? `\u76EE\u524D\u5132\u5B58\u7684\u5FEB\u7167 \xB7 ${time(storedSample.capturedAt)}` : "\u5C1A\u7121\u5FEB\u7167";
+  const sampleMeta = el("p");
+  const sampleBody = el("div");
+  sampleMeta.setAttribute("role", "status");
+  capturePanel.append(sampleMeta, sampleBody);
+  function renderSample() {
+    sampleBody.replaceChildren();
+    const currentConfig = JSON.stringify([
+      fields.url.value,
+      fields.selector.value,
+      ignore.value.split("\n").map((s) => s.trim()).filter(Boolean)
+    ]);
+    sampleMeta.textContent = sampleLabel + (sample && currentConfig !== sampleConfig ? "\u3002\u7DB2\u5740\u6216\u9078\u5340\u5DF2\u4FEE\u6539\uFF0C\u4EE5\u4E0B\u4ECD\u662F\u539F\u7BC4\u570D\u7684\u5167\u5BB9\uFF0C\u8ACB\u91CD\u65B0\u9A57\u8B49\u9810\u89BD\u3002" : "\u3002\u52FE\u9078\u53EF\u5373\u6642\u5207\u63DB\u4E0B\u65B9\u986F\u793A\u7684\u5167\u5BB9\uFF1B\u4E0D\u6703\u91CD\u65B0\u64F7\u53D6\u7DB2\u9801\u6216\u4FEE\u6539\u5DF2\u5132\u5B58\u7684\u5FEB\u7167\u3002");
+    if (!sample) {
+      sampleBody.append(
+        el("p", "\u9078\u597D\u5340\u57DF\u5F8C\uFF0C\u6309\u300C\u6388\u6B0A\u4E26\u9A57\u8B49\u9810\u89BD\u300D\u5373\u53EF\u67E5\u770B\u5BE6\u969B\u64F7\u53D6\u7684\u5167\u5BB9\u3002")
+      );
+      return;
+    }
+    for (const [key, title2, values] of [
+      ["text", "\u6587\u5B57", sample.textBlocks],
+      ["links", "\u9023\u7D50", sample.links.map((v) => `${v.text}
+${v.href}`)],
+      ["images", "\u5716\u7247\u7DB2\u5740", sample.images.map((v) => `${v.alt}
+${v.src}`)]
+    ]) {
+      if (!checks[key].checked) continue;
+      const block = el("section");
+      block.dataset.capture = key;
+      block.append(el("h3", `${title2}\uFF08${values.length} \u7B46\uFF09`));
+      if (!sample.captureOptions[key])
+        block.append(el("p", "\u9019\u4EFD\u5FEB\u7167\u672A\u64F7\u53D6\u6B64\u985E\u5167\u5BB9\uFF0C\u8ACB\u91CD\u65B0\u9A57\u8B49\u9810\u89BD\u3002"));
+      else if (!values.length) block.append(el("p", "\u6C92\u6709\u64F7\u53D6\u5230\u6B64\u985E\u5167\u5BB9\u3002"));
+      else block.append(el("pre", values.join("\n\n")));
+      sampleBody.append(block);
+    }
+    if (!["text", "links", "images"].some((key) => checks[key].checked))
+      sampleBody.append(el("p", "\u8ACB\u81F3\u5C11\u52FE\u9078\u4E00\u7A2E\u8981\u6BD4\u8F03\u7684\u5167\u5BB9\u3002"));
+  }
+  renderSample();
+  f.addEventListener("input", renderSample);
   f.append(
     el(
       "p",
@@ -598,7 +651,11 @@ function form(m) {
       if (!tabId) throw Error("\u8ACB\u5148\u958B\u555F\u8A2D\u5B9A\u7DB2\u9801");
       const r = await send({ type: "PREVIEW_SELECTION", tabId, config: c });
       if (!r.ok) throw Error(r.error);
-      preview.textContent = JSON.stringify(r.content, null, 2);
+      sample = r.content;
+      sampleConfig = JSON.stringify([c.url, c.selector, c.ignoreSelectors]);
+      sampleLabel = `\u672C\u6B21\u9A57\u8B49\u9810\u89BD \xB7 ${time(Date.now())}\uFF08\u5C1A\u672A\u5132\u5B58\uFF09`;
+      renderSample();
+      preview.textContent = "\u9A57\u8B49\u6210\u529F\uFF0C\u64F7\u53D6\u5167\u5BB9\u5DF2\u986F\u793A\u5728\u4E0A\u65B9\u9810\u89BD\u3002\u5132\u5B58\u5F8C\u6703\u91CD\u65B0\u5EFA\u7ACB\u6BD4\u5C0D\u57FA\u6E96\u3002";
       previewKey = requestedKey;
     } finally {
       previewBusy = false;

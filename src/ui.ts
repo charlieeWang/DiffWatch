@@ -8,6 +8,7 @@ import {
   type Snapshot,
   type ChangeEvent,
   type Job,
+  type Content,
 } from "./core";
 import { send } from "./messages";
 const app = document.querySelector("#app")!;
@@ -369,10 +370,7 @@ function form(m?: Monitor) {
   advanced.className = "form-advanced";
   advanced.append(
     el("summary", "進階設定"),
-    el(
-      "p",
-      "以下規則會在選區時自動產生。若手動修改，需要重新驗證預覽。",
-    ),
+    el("p", "以下規則會在選區時自動產生。若手動修改，需要重新驗證預覽。"),
   );
   const explain = (
     input: HTMLInputElement | HTMLTextAreaElement,
@@ -391,20 +389,14 @@ function form(m?: Monitor) {
     "text",
     advanced,
   );
-  explain(
-    rootRule,
-    "用來找到你選取的監控範圍。",
-  );
+  explain(rootRule, "用來找到你選取的監控範圍。");
   const ignoreLabel = el("label", "不比較的區塊（CSS，每行一個）"),
     ignore = el("textarea");
   ignore.value = source.ignoreSelectors.join("\n");
   ignore.name = "ignoreSelectors";
   ignoreLabel.append(ignore);
   advanced.append(ignoreLabel);
-  explain(
-    ignore,
-    "在監控範圍需要忽略的區塊；若為空則表示沒有需要排除的區域。",
-  );
+  explain(ignore, "在監控範圍需要忽略的區塊；若為空則表示沒有需要排除的區域。");
   fields.ignoreSelectors = ignore;
   const interval = field(
     "intervalMinutes",
@@ -426,7 +418,7 @@ function form(m?: Monitor) {
   f.append(intervals);
   const delay = field(
     "settleDelayMs",
-    "網頁開啟後，再等幾秒檢查（0–30）",
+    "網頁開啟後，延遲幾秒後再檢查（0–30）",
     String(source.settleDelayMs / 1000),
     "number",
   );
@@ -435,7 +427,7 @@ function form(m?: Monitor) {
   delay.step = "0.001";
   const readyRule = field(
     "readinessSelector",
-    "等這個區塊出現才開始（CSS，選填）",
+    "等待此區塊出現才檢查（CSS，選填）",
     source.readinessSelector || "",
     "text",
     advanced,
@@ -465,21 +457,92 @@ function form(m?: Monitor) {
   updateRegionSummary();
   f.addEventListener("input", updateRegionSummary);
   const checks: Record<string, HTMLInputElement> = {};
+  const capturePanel = el("section");
+  capturePanel.className = "capture-preview";
+  capturePanel.append(el("h2", "要比較哪些內容？"));
+  f.append(capturePanel);
+  const captureChoices = el("div");
+  captureChoices.className = "capture-choices";
+  capturePanel.append(captureChoices);
   for (const [key, label, value] of [
     ["text", "文字", source.captureOptions.text],
     ["links", "連結", source.captureOptions.links],
     ["images", "圖片網址", source.captureOptions.images],
     ["allowEmpty", "允許空內容", source.allowEmpty],
-    ["notifications", "桌面變更通知", source.notifications],
+    ["notifications", "桌面通知", source.notifications],
   ] as const) {
     const l = el("label"),
       i = el("input");
     i.type = "checkbox";
     i.checked = value;
+    i.name = key;
     checks[key] = i;
     l.append(i, document.createTextNode(label));
-    f.append(l);
+    if (["text", "links", "images"].includes(key)) captureChoices.append(l);
+    else f.append(l);
+    if (key === "allowEmpty")
+      explain(
+        i,
+        "未勾選時，如果沒有抓到任何已勾選的內容，會視為檢查失敗並保留原基準，避免網頁還沒載好就誤報。勾選後，空白也會當成有效結果，可能記錄為內容已被清空。一般建議保持關閉。",
+      );
   }
+  let sample: Content | undefined = m
+    ? state.snapshots.find((s: Snapshot) => s.id === m.baselineSnapshotId)
+    : undefined;
+  const storedSample = sample as Snapshot | undefined;
+  let sampleConfig = JSON.stringify([
+    m?.url ?? source.url,
+    m?.selector ?? source.selector,
+    m?.ignoreSelectors ?? source.ignoreSelectors,
+  ]);
+  let sampleLabel = storedSample
+    ? `目前儲存的快照 · ${time(storedSample.capturedAt)}`
+    : "尚無快照";
+  const sampleMeta = el("p");
+  const sampleBody = el("div");
+  sampleMeta.setAttribute("role", "status");
+  capturePanel.append(sampleMeta, sampleBody);
+  function renderSample() {
+    sampleBody.replaceChildren();
+    const currentConfig = JSON.stringify([
+      fields.url.value,
+      fields.selector.value,
+      ignore.value
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ]);
+    sampleMeta.textContent =
+      sampleLabel +
+      (sample && currentConfig !== sampleConfig
+        ? "。網址或選區已修改，以下仍是原範圍的內容，請重新驗證預覽。"
+        : "。勾選可即時切換下方顯示的內容；不會重新擷取網頁或修改已儲存的快照。");
+    if (!sample) {
+      sampleBody.append(
+        el("p", "選好區域後，按「授權並驗證預覽」即可查看實際擷取的內容。"),
+      );
+      return;
+    }
+    for (const [key, title, values] of [
+      ["text", "文字", sample.textBlocks],
+      ["links", "連結", sample.links.map((v) => `${v.text}\n${v.href}`)],
+      ["images", "圖片網址", sample.images.map((v) => `${v.alt}\n${v.src}`)],
+    ] as const) {
+      if (!checks[key].checked) continue;
+      const block = el("section");
+      block.dataset.capture = key;
+      block.append(el("h3", `${title}（${values.length} 筆）`));
+      if (!sample.captureOptions[key])
+        block.append(el("p", "這份快照未擷取此類內容，請重新驗證預覽。"));
+      else if (!values.length) block.append(el("p", "沒有擷取到此類內容。"));
+      else block.append(el("pre", values.join("\n\n")));
+      sampleBody.append(block);
+    }
+    if (!["text", "links", "images"].some((key) => checks[key].checked))
+      sampleBody.append(el("p", "請至少勾選一種要比較的內容。"));
+  }
+  renderSample();
+  f.addEventListener("input", renderSample);
   f.append(
     el(
       "p",
@@ -567,7 +630,12 @@ function form(m?: Monitor) {
       if (!tabId) throw Error("請先開啟設定網頁");
       const r = await send({ type: "PREVIEW_SELECTION", tabId, config: c });
       if (!r.ok) throw Error(r.error);
-      preview.textContent = JSON.stringify(r.content, null, 2);
+      sample = r.content;
+      sampleConfig = JSON.stringify([c.url, c.selector, c.ignoreSelectors]);
+      sampleLabel = `本次驗證預覽 · ${time(Date.now())}（尚未儲存）`;
+      renderSample();
+      preview.textContent =
+        "驗證成功，擷取內容已顯示在上方預覽。儲存後會重新建立比對基準。";
       previewKey = requestedKey;
     } finally {
       previewBusy = false;

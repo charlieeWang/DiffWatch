@@ -238,18 +238,11 @@ try {
   await editor.locator("form").evaluate((form) => form.requestSubmit());
   assert(await saveButton.isDisabled(), "Enter cannot bypass the preview gate");
   await editor.getByRole("button", { name: "授權並驗證預覽" }).click();
-  await editor
-    .locator("form pre")
-    .filter({ hasText: "normalizationVersion" })
-    .waitFor();
+  await editor.locator("form pre").filter({ hasText: "驗證成功" }).waitFor();
   editor.on("dialog", (d) => d.accept());
   assert(await saveButton.isEnabled(), "successful preview enables save");
   await editor.locator(".form-advanced summary").click();
-  assert(
-    await editor
-      .getByLabel("監控範圍的定位規則（CSS）", { exact: true })
-      .isVisible(),
-  );
+  assert(await editor.locator("input[name=selector]").isVisible());
   await editor.locator("input[name=selector]").fill("#products h2");
   assert(await saveButton.isDisabled(), "changed settings invalidate preview");
   await editor.locator("input[name=selector]").fill("#products");
@@ -263,6 +256,28 @@ try {
     s.monitors.some((m) => m.name === "視覺選取測試" && m.health === "healthy"),
   );
   assert.equal(live.monitors[0].ignoreSelectors.length, 1);
+  await editor.getByRole("button", { name: "編輯", exact: true }).click();
+  const capturePanel = editor.locator(".capture-preview");
+  await capturePanel.getByText(/目前儲存的快照/).waitFor();
+  assert(await capturePanel.locator('[data-capture="text"] pre').isVisible());
+  await editor.locator('input[name="text"]').uncheck();
+  assert.equal(await capturePanel.locator('[data-capture="text"]').count(), 0);
+  assert(await capturePanel.locator('[data-capture="links"]').isVisible());
+  await editor.locator('input[name="text"]').check();
+  assert(await capturePanel.locator('[data-capture="text"] pre').isVisible());
+  await editor
+    .locator('input[name="url"]')
+    .fill("http://127.0.0.1:8765/?changed=1");
+  await capturePanel.getByText(/以下仍是原範圍的內容/).waitFor();
+  await editor.screenshot({
+    path: "work/form-snapshot-preview.png",
+    fullPage: true,
+  });
+  assert(
+    await editor
+      .getByRole("checkbox", { name: "桌面通知", exact: true })
+      .isVisible(),
+  );
   console.log("Picker ignore preview save baseline UI pass");
   const bench = await ctx.newPage();
   await bench.goto("http://127.0.0.1:8765/?mode=benchmark");

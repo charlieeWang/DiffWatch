@@ -360,3 +360,31 @@ button.refresh-icon:hover {
   width: 21px;
   height: 21px;
 }
+.capture-preview {
+  margin: 20px 0;
+  padding: 18px;
+  border: 1px solid #b9d4cb;
+  border-radius: 10px;
+  background: #f0f7f4;
+}
+.capture-preview h2 {
+  margin-top: 0;
+  font-size: 18px;
+}
+.capture-preview h3 {
+  font-size: 15px;
+}
+.capture-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+}
+.capture-preview pre {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: white;
+  padding: 12px;
+  border-radius: 6px;
+}
