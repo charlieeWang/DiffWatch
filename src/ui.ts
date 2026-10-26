@@ -640,9 +640,24 @@ function form(m?: Monitor) {
       previewBusy = false;
       pre.disabled = false;
       updateSave();
+      void updateCaptureLabel();
     }
   });
   pre.type = "button";
+  let permissionCheck = 0;
+  async function updateCaptureLabel() {
+    const check = ++permissionCheck;
+    let granted = false;
+    try {
+      const origin = urlOf(fields.url.value).origin;
+      granted = await chrome.permissions.contains({ origins: [origin + "/*"] });
+    } catch {}
+    if (check !== permissionCheck) return;
+    pre.textContent = granted ? "重新擷取快照" : "授權並擷取快照";
+    updateSave();
+  }
+  fields.url.addEventListener("input", () => void updateCaptureLabel());
+  f.addEventListener("focusin", () => void updateCaptureLabel());
   f.append(pre, capturePanel, preview);
   const save = el("button", "授權並儲存");
   save.type = "submit";
@@ -666,12 +681,13 @@ function form(m?: Monitor) {
       : !valid
         ? "請完成有效的任務設定，再驗證預覽。"
         : needsPreview
-          ? "請先按「授權並擷取快照」，成功後才能儲存。"
+          ? `請先按「${pre.textContent}」，成功後才能儲存。`
           : "設定已可儲存。";
   }
   f.addEventListener("input", updateSave);
   f.addEventListener("change", updateSave);
   updateSave();
+  void updateCaptureLabel();
   f.onsubmit = (e) => {
     e.preventDefault();
     updateSave();

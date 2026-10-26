@@ -660,9 +660,25 @@ ${v.src}`)]
       previewBusy = false;
       pre.disabled = false;
       updateSave();
+      void updateCaptureLabel();
     }
   });
   pre.type = "button";
+  let permissionCheck = 0;
+  async function updateCaptureLabel() {
+    const check = ++permissionCheck;
+    let granted = false;
+    try {
+      const origin = urlOf(fields.url.value).origin;
+      granted = await chrome.permissions.contains({ origins: [origin + "/*"] });
+    } catch {
+    }
+    if (check !== permissionCheck) return;
+    pre.textContent = granted ? "\u91CD\u65B0\u64F7\u53D6\u5FEB\u7167" : "\u6388\u6B0A\u4E26\u64F7\u53D6\u5FEB\u7167";
+    updateSave();
+  }
+  fields.url.addEventListener("input", () => void updateCaptureLabel());
+  f.addEventListener("focusin", () => void updateCaptureLabel());
   f.append(pre, capturePanel, preview);
   const save = el("button", "\u6388\u6B0A\u4E26\u5132\u5B58");
   save.type = "submit";
@@ -682,11 +698,12 @@ ${v.src}`)]
     } catch {
     }
     save.disabled = !valid || needsPreview || previewBusy || saving;
-    saveHint.textContent = previewBusy ? "\u6B63\u5728\u9A57\u8B49\u9810\u89BD\u2026" : !valid ? "\u8ACB\u5B8C\u6210\u6709\u6548\u7684\u4EFB\u52D9\u8A2D\u5B9A\uFF0C\u518D\u9A57\u8B49\u9810\u89BD\u3002" : needsPreview ? "\u8ACB\u5148\u6309\u300C\u6388\u6B0A\u4E26\u64F7\u53D6\u5FEB\u7167\u300D\uFF0C\u6210\u529F\u5F8C\u624D\u80FD\u5132\u5B58\u3002" : "\u8A2D\u5B9A\u5DF2\u53EF\u5132\u5B58\u3002";
+    saveHint.textContent = previewBusy ? "\u6B63\u5728\u9A57\u8B49\u9810\u89BD\u2026" : !valid ? "\u8ACB\u5B8C\u6210\u6709\u6548\u7684\u4EFB\u52D9\u8A2D\u5B9A\uFF0C\u518D\u9A57\u8B49\u9810\u89BD\u3002" : needsPreview ? `\u8ACB\u5148\u6309\u300C${pre.textContent}\u300D\uFF0C\u6210\u529F\u5F8C\u624D\u80FD\u5132\u5B58\u3002` : "\u8A2D\u5B9A\u5DF2\u53EF\u5132\u5B58\u3002";
   }
   f.addEventListener("input", updateSave);
   f.addEventListener("change", updateSave);
   updateSave();
+  void updateCaptureLabel();
   f.onsubmit = (e) => {
     e.preventDefault();
     updateSave();
