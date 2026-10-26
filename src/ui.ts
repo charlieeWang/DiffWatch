@@ -342,7 +342,13 @@ function form(m?: Monitor) {
     notifications: true,
   };
   const fields: Record<string, HTMLInputElement | HTMLTextAreaElement> = {};
-  const field = (key: string, label: string, value: string, type = "text") => {
+  const field = (
+    key: string,
+    label: string,
+    value: string,
+    type = "text",
+    container: HTMLElement = f,
+  ) => {
     const l = el("label", label),
       i = el("input");
     i.type = type;
@@ -350,17 +356,55 @@ function form(m?: Monitor) {
     i.name = key;
     fields[key] = i;
     l.append(i);
-    f.append(l);
+    container.append(l);
     return i;
   };
   field("name", "名稱", source.name).required = true;
   field("url", "HTTP(S) 網址", source.url, "url").required = true;
-  field("selector", "根 CSS selector", source.selector).required = true;
-  const ignoreLabel = el("label", "忽略 selector（相對根元素，每行一個）"),
+  const regionSummary = el("p");
+  regionSummary.className = "region-summary";
+  regionSummary.setAttribute("role", "status");
+  f.append(regionSummary);
+  const advanced = el("details");
+  advanced.className = "form-advanced";
+  advanced.append(
+    el("summary", "進階設定（一般不需要修改）"),
+    el(
+      "p",
+      "這些規則會在選區時自動產生。不熟悉 CSS 可以直接略過，用「開啟網頁並選取區域」調整即可。手動修改後，需要重新驗證預覽。",
+    ),
+  );
+  const explain = (
+    input: HTMLInputElement | HTMLTextAreaElement,
+    text: string,
+  ) => {
+    const help = el("small", text);
+    help.id = `help-${input.name}`;
+    help.className = "field-help";
+    input.setAttribute("aria-describedby", help.id);
+    input.parentElement!.after(help);
+  };
+  const rootRule = field(
+    "selector",
+    "監控範圍的定位規則（CSS）",
+    source.selector,
+    "text",
+    advanced,
+  );
+  explain(
+    rootRule,
+    "用來找到你選取的整個監控範圍，必須剛好對應一個區域。通常不需要自己輸入。",
+  );
+  const ignoreLabel = el("label", "不比較的區塊（CSS，每行一個）"),
     ignore = el("textarea");
   ignore.value = source.ignoreSelectors.join("\n");
+  ignore.name = "ignoreSelectors";
   ignoreLabel.append(ignore);
-  f.append(ignoreLabel);
+  advanced.append(ignoreLabel);
+  explain(
+    ignore,
+    "這些是你用「忽略區塊」選出的內容，只在監控範圍內尋找；留空表示不另外排除。",
+  );
   fields.ignoreSelectors = ignore;
   const interval = field(
     "intervalMinutes",
@@ -382,23 +426,44 @@ function form(m?: Monitor) {
   f.append(intervals);
   const delay = field(
     "settleDelayMs",
-    "載入後延遲秒數（0–30）",
+    "網頁開啟後，再等幾秒檢查（0–30）",
     String(source.settleDelayMs / 1000),
     "number",
   );
   delay.min = "0";
   delay.max = "30";
   delay.step = "0.001";
-  field(
+  const readyRule = field(
     "readinessSelector",
-    "就緒 selector（選填）",
+    "等這個區塊出現才開始（CSS，選填）",
     source.readinessSelector || "",
+    "text",
+    advanced,
   );
-  field(
+  explain(
+    readyRule,
+    "適合內容較晚載入的網站：等指定區塊出現才開始比較。留空即可使用一般等待流程。",
+  );
+  const failureRule = field(
     "failureSelector",
-    "錯誤／登入 selector（選填）",
+    "看到這個區塊就停止本次檢查（CSS，選填）",
     source.failureSelector || "",
+    "text",
+    advanced,
   );
+  explain(
+    failureRule,
+    "可指定登入提示或錯誤訊息的區塊，出現時保留原基準。這需要你自行設定，不會自動辨識所有登入或錯誤頁。",
+  );
+  f.append(advanced);
+  const updateRegionSummary = () => {
+    const ignored = ignore.value.split("\n").filter((s) => s.trim()).length;
+    regionSummary.textContent = fields.selector.value.trim()
+      ? `已設定監控範圍${ignored ? `，已忽略 ${ignored} 個區塊` : ""}。想調整範圍，請用下方按鈕直接在網頁點選。`
+      : "尚未選取監控範圍。請用下方按鈕開啟網頁，再點選想追蹤的內容。";
+  };
+  updateRegionSummary();
+  f.addEventListener("input", updateRegionSummary);
   const checks: Record<string, HTMLInputElement> = {};
   for (const [key, label, value] of [
     ["text", "文字", source.captureOptions.text],
@@ -487,7 +552,7 @@ function form(m?: Monitor) {
   const selectionTools = el("fieldset");
   selectionTools.className = "selection-tools";
   selectionTools.append(el("legend", "網頁與選區設定"), open);
-  f.append(selectionTools);
+  regionSummary.after(selectionTools);
   const pre = button("授權並驗證預覽", async () => {
     const c = read();
     const requestedKey = JSON.stringify(c);

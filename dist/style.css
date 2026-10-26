@@ -4,6 +4,33 @@
   background: #f1f5f4;
   line-height: 1.6;
 }
+.region-summary {
+  color: #345e50;
+  background: #edf7f2;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.form-advanced {
+  margin: 20px 0;
+  padding: 14px;
+  border: 1px solid #d2dfd9;
+  border-radius: 10px;
+  background: #f8faf9;
+}
+.form-advanced summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.form-advanced > p,
+.field-help {
+  color: #526d63;
+  font-size: 13px;
+}
+.field-help {
+  display: block;
+  margin-top: 6px;
+  line-height: 1.6;
+}
 .history-heading {
   display: flex;
   justify-content: space-between;

@@ -209,6 +209,20 @@ try {
   const editor = await nextPage;
   await editor.waitForLoadState();
   await editor.locator("input[name=name]").fill("視覺選取測試");
+  assert.equal(
+    await editor.locator(".form-advanced").getAttribute("open"),
+    null,
+  );
+  assert.equal(await editor.locator("input[name=selector]").isVisible(), false);
+  assert(
+    await editor
+      .getByRole("button", { name: "開啟網頁並選取區域" })
+      .isVisible(),
+  );
+  await editor.screenshot({
+    path: "work/form-simple-collapsed.png",
+    fullPage: true,
+  });
   const saveButton = editor.getByRole("button", {
     name: "授權並儲存",
     exact: true,
@@ -230,6 +244,12 @@ try {
     .waitFor();
   editor.on("dialog", (d) => d.accept());
   assert(await saveButton.isEnabled(), "successful preview enables save");
+  await editor.locator(".form-advanced summary").click();
+  assert(
+    await editor
+      .getByLabel("監控範圍的定位規則（CSS）", { exact: true })
+      .isVisible(),
+  );
   await editor.locator("input[name=selector]").fill("#products h2");
   assert(await saveButton.isDisabled(), "changed settings invalidate preview");
   await editor.locator("input[name=selector]").fill("#products");

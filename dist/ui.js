@@ -395,23 +395,58 @@ function form(m) {
     notifications: true
   };
   const fields = {};
-  const field = (key, label, value, type = "text") => {
+  const field = (key, label, value, type = "text", container = f) => {
     const l = el("label", label), i = el("input");
     i.type = type;
     i.value = value;
     i.name = key;
     fields[key] = i;
     l.append(i);
-    f.append(l);
+    container.append(l);
     return i;
   };
   field("name", "\u540D\u7A31", source.name).required = true;
   field("url", "HTTP(S) \u7DB2\u5740", source.url, "url").required = true;
-  field("selector", "\u6839 CSS selector", source.selector).required = true;
-  const ignoreLabel = el("label", "\u5FFD\u7565 selector\uFF08\u76F8\u5C0D\u6839\u5143\u7D20\uFF0C\u6BCF\u884C\u4E00\u500B\uFF09"), ignore = el("textarea");
+  const regionSummary = el("p");
+  regionSummary.className = "region-summary";
+  regionSummary.setAttribute("role", "status");
+  f.append(regionSummary);
+  const advanced = el("details");
+  advanced.className = "form-advanced";
+  advanced.append(
+    el("summary", "\u9032\u968E\u8A2D\u5B9A\uFF08\u4E00\u822C\u4E0D\u9700\u8981\u4FEE\u6539\uFF09"),
+    el(
+      "p",
+      "\u9019\u4E9B\u898F\u5247\u6703\u5728\u9078\u5340\u6642\u81EA\u52D5\u7522\u751F\u3002\u4E0D\u719F\u6089 CSS \u53EF\u4EE5\u76F4\u63A5\u7565\u904E\uFF0C\u7528\u300C\u958B\u555F\u7DB2\u9801\u4E26\u9078\u53D6\u5340\u57DF\u300D\u8ABF\u6574\u5373\u53EF\u3002\u624B\u52D5\u4FEE\u6539\u5F8C\uFF0C\u9700\u8981\u91CD\u65B0\u9A57\u8B49\u9810\u89BD\u3002"
+    )
+  );
+  const explain = (input, text) => {
+    const help = el("small", text);
+    help.id = `help-${input.name}`;
+    help.className = "field-help";
+    input.setAttribute("aria-describedby", help.id);
+    input.parentElement.after(help);
+  };
+  const rootRule = field(
+    "selector",
+    "\u76E3\u63A7\u7BC4\u570D\u7684\u5B9A\u4F4D\u898F\u5247\uFF08CSS\uFF09",
+    source.selector,
+    "text",
+    advanced
+  );
+  explain(
+    rootRule,
+    "\u7528\u4F86\u627E\u5230\u4F60\u9078\u53D6\u7684\u6574\u500B\u76E3\u63A7\u7BC4\u570D\uFF0C\u5FC5\u9808\u525B\u597D\u5C0D\u61C9\u4E00\u500B\u5340\u57DF\u3002\u901A\u5E38\u4E0D\u9700\u8981\u81EA\u5DF1\u8F38\u5165\u3002"
+  );
+  const ignoreLabel = el("label", "\u4E0D\u6BD4\u8F03\u7684\u5340\u584A\uFF08CSS\uFF0C\u6BCF\u884C\u4E00\u500B\uFF09"), ignore = el("textarea");
   ignore.value = source.ignoreSelectors.join("\n");
+  ignore.name = "ignoreSelectors";
   ignoreLabel.append(ignore);
-  f.append(ignoreLabel);
+  advanced.append(ignoreLabel);
+  explain(
+    ignore,
+    "\u9019\u4E9B\u662F\u4F60\u7528\u300C\u5FFD\u7565\u5340\u584A\u300D\u9078\u51FA\u7684\u5167\u5BB9\uFF0C\u53EA\u5728\u76E3\u63A7\u7BC4\u570D\u5167\u5C0B\u627E\uFF1B\u7559\u7A7A\u8868\u793A\u4E0D\u53E6\u5916\u6392\u9664\u3002"
+  );
   fields.ignoreSelectors = ignore;
   const interval = field(
     "intervalMinutes",
@@ -433,23 +468,42 @@ function form(m) {
   f.append(intervals);
   const delay = field(
     "settleDelayMs",
-    "\u8F09\u5165\u5F8C\u5EF6\u9072\u79D2\u6578\uFF080\u201330\uFF09",
+    "\u7DB2\u9801\u958B\u555F\u5F8C\uFF0C\u518D\u7B49\u5E7E\u79D2\u6AA2\u67E5\uFF080\u201330\uFF09",
     String(source.settleDelayMs / 1e3),
     "number"
   );
   delay.min = "0";
   delay.max = "30";
   delay.step = "0.001";
-  field(
+  const readyRule = field(
     "readinessSelector",
-    "\u5C31\u7DD2 selector\uFF08\u9078\u586B\uFF09",
-    source.readinessSelector || ""
+    "\u7B49\u9019\u500B\u5340\u584A\u51FA\u73FE\u624D\u958B\u59CB\uFF08CSS\uFF0C\u9078\u586B\uFF09",
+    source.readinessSelector || "",
+    "text",
+    advanced
   );
-  field(
+  explain(
+    readyRule,
+    "\u9069\u5408\u5167\u5BB9\u8F03\u665A\u8F09\u5165\u7684\u7DB2\u7AD9\uFF1A\u7B49\u6307\u5B9A\u5340\u584A\u51FA\u73FE\u624D\u958B\u59CB\u6BD4\u8F03\u3002\u7559\u7A7A\u5373\u53EF\u4F7F\u7528\u4E00\u822C\u7B49\u5F85\u6D41\u7A0B\u3002"
+  );
+  const failureRule = field(
     "failureSelector",
-    "\u932F\u8AA4\uFF0F\u767B\u5165 selector\uFF08\u9078\u586B\uFF09",
-    source.failureSelector || ""
+    "\u770B\u5230\u9019\u500B\u5340\u584A\u5C31\u505C\u6B62\u672C\u6B21\u6AA2\u67E5\uFF08CSS\uFF0C\u9078\u586B\uFF09",
+    source.failureSelector || "",
+    "text",
+    advanced
   );
+  explain(
+    failureRule,
+    "\u53EF\u6307\u5B9A\u767B\u5165\u63D0\u793A\u6216\u932F\u8AA4\u8A0A\u606F\u7684\u5340\u584A\uFF0C\u51FA\u73FE\u6642\u4FDD\u7559\u539F\u57FA\u6E96\u3002\u9019\u9700\u8981\u4F60\u81EA\u884C\u8A2D\u5B9A\uFF0C\u4E0D\u6703\u81EA\u52D5\u8FA8\u8B58\u6240\u6709\u767B\u5165\u6216\u932F\u8AA4\u9801\u3002"
+  );
+  f.append(advanced);
+  const updateRegionSummary = () => {
+    const ignored = ignore.value.split("\n").filter((s) => s.trim()).length;
+    regionSummary.textContent = fields.selector.value.trim() ? `\u5DF2\u8A2D\u5B9A\u76E3\u63A7\u7BC4\u570D${ignored ? `\uFF0C\u5DF2\u5FFD\u7565 ${ignored} \u500B\u5340\u584A` : ""}\u3002\u60F3\u8ABF\u6574\u7BC4\u570D\uFF0C\u8ACB\u7528\u4E0B\u65B9\u6309\u9215\u76F4\u63A5\u5728\u7DB2\u9801\u9EDE\u9078\u3002` : "\u5C1A\u672A\u9078\u53D6\u76E3\u63A7\u7BC4\u570D\u3002\u8ACB\u7528\u4E0B\u65B9\u6309\u9215\u958B\u555F\u7DB2\u9801\uFF0C\u518D\u9EDE\u9078\u60F3\u8FFD\u8E64\u7684\u5167\u5BB9\u3002";
+  };
+  updateRegionSummary();
+  f.addEventListener("input", updateRegionSummary);
   const checks = {};
   for (const [key, label, value] of [
     ["text", "\u6587\u5B57", source.captureOptions.text],
@@ -529,7 +583,7 @@ function form(m) {
   const selectionTools = el("fieldset");
   selectionTools.className = "selection-tools";
   selectionTools.append(el("legend", "\u7DB2\u9801\u8207\u9078\u5340\u8A2D\u5B9A"), open);
-  f.append(selectionTools);
+  regionSummary.after(selectionTools);
   const pre = button("\u6388\u6B0A\u4E26\u9A57\u8B49\u9810\u89BD", async () => {
     const c = read();
     const requestedKey = JSON.stringify(c);
