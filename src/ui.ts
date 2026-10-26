@@ -368,10 +368,10 @@ function form(m?: Monitor) {
   const advanced = el("details");
   advanced.className = "form-advanced";
   advanced.append(
-    el("summary", "進階設定（一般不需要修改）"),
+    el("summary", "進階設定"),
     el(
       "p",
-      "這些規則會在選區時自動產生。不熟悉 CSS 可以直接略過，用「開啟網頁並選取區域」調整即可。手動修改後，需要重新驗證預覽。",
+      "以下規則會在選區時自動產生。若手動修改，需要重新驗證預覽。",
     ),
   );
   const explain = (
@@ -386,14 +386,14 @@ function form(m?: Monitor) {
   };
   const rootRule = field(
     "selector",
-    "監控範圍的定位規則（CSS）",
+    "監控範圍",
     source.selector,
     "text",
     advanced,
   );
   explain(
     rootRule,
-    "用來找到你選取的整個監控範圍，必須剛好對應一個區域。通常不需要自己輸入。",
+    "用來找到你選取的監控範圍。",
   );
   const ignoreLabel = el("label", "不比較的區塊（CSS，每行一個）"),
     ignore = el("textarea");
@@ -403,12 +403,12 @@ function form(m?: Monitor) {
   advanced.append(ignoreLabel);
   explain(
     ignore,
-    "這些是你用「忽略區塊」選出的內容，只在監控範圍內尋找；留空表示不另外排除。",
+    "在監控範圍需要忽略的區塊；若為空則表示沒有需要排除的區域。",
   );
   fields.ignoreSelectors = ignore;
   const interval = field(
     "intervalMinutes",
-    "間隔分鐘（1–1440；預設 5）",
+    "每次檢查間隔時間（1–1440；預設 5；單位為分鐘）",
     String(source.intervalMinutes),
     "number",
   );
