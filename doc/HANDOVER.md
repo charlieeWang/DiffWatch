@@ -332,6 +332,12 @@ YouTube 等動態網站背景載入可能不同，觀看數／留言／lazy load
 
 ## 15. 官方延伸閱讀
 
+### 斷線修復與錯誤紀錄（1.0.1，2026-10-26）
+
+工作先開本機 job.html 占位頁，保存本瀏覽器 session 的建立所有權，再導向網站。錯誤頁無法注入程式時，closeOwned 也能依新工作建立的所有權回收，不再只依賴 PROBE。舊紀錄或不同 session 仍不能只憑 tabId 關頁；接管／導覽會放棄所有權。未回收的同 session 工作分頁繼續占用 acquire 容量，防止重試開頁累積。sampling 失敗走 sampleSafely、累加故障並退避，只有 tabs.get 證實分頁不存在才記 TAB_CLOSED。已知離線時不開頁。
+
+錯誤紀錄放 settings 的 diagnostics（不需新 DB schema），最多 200 筆，只保留時間、代碼、任務／工作 ID、階段與診斷 ID。fail 的紀錄與工作狀態同交易；clear diagnostics 不刪任務、基準或變更歷史。管理頁可查看、匯出 JSON 或清除，舊版錯誤不會補回。匯出不含 DOM、網址、query、登入資訊與任務名稱。`npm run test:offline` 驗證網路錯誤頁回收、清理失敗阻擋、重連及紀錄介面。
+
 ### 一鍵進入選區（2026-10-25）
 
 表單的網頁設定已合併為「開啟網頁並選取區域」。UI 在明確按鈕手勢要求來源權限，開啟作用中設定分頁，waitForPickerPage 等主文件完成，再送 START_PICKER。遇到關頁、逾時或跨來源導向會報錯，不要求再按第二次選區。原本兩顆按鈕已移除。這是使用者主動設定流程，與監控工作的 active:false 背景分頁不同。

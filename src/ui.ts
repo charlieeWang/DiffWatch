@@ -1,6 +1,7 @@
 import {
   config,
   urlOf,
+  errorMessages,
   diff,
   type Config,
   type Monitor,
@@ -133,6 +134,10 @@ function dashboard() {
   controls.append(
     button("新增任務", () => form()),
     button("資料管理", dataPage),
+    button("錯誤紀錄", async () => {
+      state = await send({ type: "STATE" });
+      diagnosticsPage();
+    }),
     reload,
   );
   app.append(
@@ -720,6 +725,81 @@ function history(id: string, eventId?: string) {
     }
     columns.append(left, right);
     card.append(columns);
+    app.append(card);
+  }
+}
+function diagnosticsPage() {
+  editing = true;
+  app.replaceChildren(el("h1", "錯誤紀錄"), message);
+  app.append(
+    el(
+      "p",
+      "保留最近 200 筆工作錯誤與取消紀錄，不含網頁正文、網址或登入資訊。舊版錯誤不會自動補回。",
+    ),
+    button("返回", () => {
+      editing = false;
+      void refresh();
+    }),
+    button("重新整理", async () => {
+      state = await send({ type: "STATE" });
+      diagnosticsPage();
+    }),
+    button("匯出紀錄", () => {
+      const blob = new Blob(
+        [
+          JSON.stringify(
+            {
+              app: "DiffWatch",
+              version: chrome.runtime.getManifest().version,
+              exportedAt: Date.now(),
+              entries: state.diagnostics || [],
+            },
+            null,
+            2,
+          ),
+        ],
+        { type: "application/json" },
+      );
+      const link = el("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "diffwatch-diagnostics.json";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    }),
+    button("清除紀錄", async () => {
+      if (confirm("清除全部錯誤紀錄？任務與變更歷史會保留。")) {
+        await send({ type: "CLEAR_DIAGNOSTICS" });
+        state = await send({ type: "STATE" });
+        diagnosticsPage();
+      }
+    }),
+  );
+  const entries = [...(state.diagnostics || [])].reverse();
+  if (!entries.length) app.append(el("p", "目前沒有錯誤紀錄。"));
+  for (const entry of entries) {
+    const card = el("article");
+    const monitor = state.monitors.find(
+      (m: Monitor) => m.id === entry.monitorId,
+    );
+    card.append(
+      el("h2", `${time(entry.occurredAt)} · ${entry.code}`),
+      el("p", monitor?.name || entry.monitorId || "系統"),
+      el(
+        "p",
+        errorMessages[entry.code] ||
+          (
+            {
+              TAB_CLOSED: "使用者關閉工作分頁，當次檢查已取消。",
+              TAB_TAKEN_OVER: "使用者接管或導覽分頁，當次檢查已取消。",
+            } as Record<string, string>
+          )[entry.code] ||
+          "檢查失敗，請附上此紀錄回報。",
+      ),
+      el(
+        "pre",
+        `工作：${entry.runId || "—"}\n階段：${entry.phase || "—"}\n診斷：${entry.id}`,
+      ),
+    );
     app.append(card);
   }
 }

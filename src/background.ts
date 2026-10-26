@@ -42,35 +42,79 @@ async function patchJob(runId: string, fn: (j: Job) => void) {
     return j;
   });
 }
-async function closeOwned(j: Job) {
-  const current = await db.get<Job>("jobs", j.runId);
-  if (
-    (current?.error || j.error) === "TAB_TAKEN_OVER" ||
-    (current?.error || j.error) === "REDIRECTED_ORIGIN"
-  )
-    return;
-  if (!j.tabId || j.session !== (await session())) return;
-  try {
-    const tab = await chrome.tabs.get(j.tabId);
-    if (tab.active) return;
-    const probe = await chrome.tabs.sendMessage(
-      j.tabId,
-      { type: "PROBE" },
-      { frameId: 0 },
-    );
-    if (probe?.runIds?.includes(j.runId)) {
-      await chrome.tabs.remove(j.tabId);
-      await db.transaction(["jobs"], async (tx) => {
-        const s = tx.objectStore("jobs"),
-          v = await db.request<Job | undefined>(s.get(j.runId));
-        if (v && v.tabId === j.tabId) {
-          v.tabId = undefined;
-          v.documentId = undefined;
-          await db.request(s.put(v));
-        }
-      });
+async function releaseTab(runId: string, clear = false) {
+  await db.transaction(["jobs"], async (tx) => {
+    const store = tx.objectStore("jobs");
+    const job = await db.request<Job | undefined>(store.get(runId));
+    if (!job) return;
+    job.ownsTab = false;
+    if (clear) {
+      job.tabId = undefined;
+      job.documentId = undefined;
     }
-  } catch {}
+    await db.request(store.put(job));
+  });
+}
+async function closeOwned(original: Job) {
+  const job = (await db.get<Job>("jobs", original.runId)) || original;
+  if (job.tabId === undefined || job.ownsTab === false) return;
+  if (
+    job.session !== (await session()) ||
+    ["TAB_TAKEN_OVER", "REDIRECTED_ORIGIN"].includes(job.error || "")
+  ) {
+    await releaseTab(job.runId);
+    return;
+  }
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.get(job.tabId);
+  } catch {
+    await releaseTab(job.runId, true);
+    return;
+  }
+  if (tab.active) {
+    await releaseTab(job.runId);
+    return;
+  }
+  // New jobs record creation ownership before navigation. Error pages cannot
+  // receive scripts, so cleanup must not depend on a content-script response.
+  let owned = job.ownsTab === true;
+  if (!owned) {
+    try {
+      owned = (
+        await chrome.tabs.sendMessage(
+          job.tabId,
+          { type: "PROBE" },
+          { frameId: 0 },
+        )
+      )?.runIds?.includes(job.runId);
+    } catch {}
+  }
+  if (!owned) {
+    await releaseTab(job.runId);
+    return;
+  }
+  const latest = await db.get<Job>("jobs", job.runId);
+  if (latest?.ownsTab === false || (await chrome.tabs.get(job.tabId)).active)
+    return;
+  try {
+    await chrome.tabs.remove(job.tabId);
+    await releaseTab(job.runId, true);
+  } catch {
+    await db.diagnostic("TAB_CLEANUP_FAILED", job);
+  }
+}
+async function sampleSafely(job: Job) {
+  try {
+    await beginSampling(job);
+  } catch {
+    await db.fail(
+      job.runId,
+      navigator.onLine === false ? "OFFLINE" : "LOAD_TIMEOUT",
+    );
+  }
+  const latest = await db.get<Job>("jobs", job.runId);
+  if (latest && terminal(latest)) await closeOwned(latest);
 }
 async function badge() {
   const [ms, events] = await Promise.all([
@@ -137,7 +181,10 @@ async function beginSampling(j: Job) {
     await db.fail(j.runId, "TAB_TAKEN_OVER");
     return;
   }
-  if (!tab.url || new URL(tab.url).origin !== m.origin) {
+  if (!tab.url || tab.url.startsWith(chrome.runtime.getURL("job.html"))) return;
+  if (!["http:", "https:"].includes(new URL(tab.url).protocol))
+    throw Error("LOAD_TIMEOUT");
+  if (new URL(tab.url).origin !== m.origin) {
     await db.fail(j.runId, "REDIRECTED_ORIGIN");
     return;
   }
@@ -190,13 +237,55 @@ async function launch(j: Job) {
     await patchJob(j.runId, (x) => {
       x.phase = "opening";
     });
-    const tab = await chrome.tabs.create({ url: m.url, active: false });
-    const current = await patchJob(j.runId, (x) => {
-      x.tabId = tab.id;
+    if (navigator.onLine === false) {
+      await db.fail(j.runId, "OFFLINE");
+      return;
+    }
+    const bootstrap = chrome.runtime.getURL("job.html#" + j.runId);
+    const tab = await chrome.tabs.create({ url: bootstrap, active: false });
+    if (tab.id === undefined) throw Error("LOAD_TIMEOUT");
+    const observed = await chrome.tabs.get(tab.id);
+    const current = await db.transaction(["jobs"], async (tx) => {
+      const store = tx.objectStore("jobs"),
+        row = await db.request<Job | undefined>(store.get(j.runId));
+      if (!row) return;
+      row.tabId = tab.id;
+      // Without the broad tabs permission Chrome may omit our placeholder URL.
+      // tabs.create's returned ID plus this session is the creation proof.
+      row.ownsTab =
+        !observed.active &&
+        (!observed.url ||
+          observed.url === "about:blank" ||
+          observed.url === bootstrap ||
+          observed.pendingUrl === bootstrap);
+      await db.request(store.put(row));
+      return row;
+    });
+    if (!current) {
+      // Still on our unique extension placeholder, never an arbitrary website.
+      const check = await chrome.tabs.get(tab.id);
+      if (!check.active && check.url === bootstrap)
+        await chrome.tabs.remove(tab.id);
+      return;
+    }
+    if (!current.ownsTab) {
+      await db.fail(j.runId, "TAB_TAKEN_OVER");
+      return;
+    }
+    if (terminal(current)) {
+      await closeOwned(current);
+      return;
+    }
+    await patchJob(j.runId, (x) => {
       x.phase = "loading";
     });
-    if (!current || terminal(current)) return;
-    if (tab.status === "complete") await beginSampling(current);
+    const loaded = await chrome.tabs.update(tab.id, { url: m.url });
+    if (
+      loaded?.status === "complete" &&
+      loaded.url &&
+      new URL(loaded.url).origin === m.origin
+    )
+      await sampleSafely({ ...current, phase: "loading" });
   } catch (e) {
     await db.fail(
       j.runId,
@@ -204,6 +293,8 @@ async function launch(j: Job) {
         ? "PERMISSION_REQUIRED"
         : "LOAD_TIMEOUT",
     );
+    const current = await db.get<Job>("jobs", j.runId);
+    if (current) await closeOwned(current);
   }
 }
 async function dispatch() {
@@ -226,21 +317,25 @@ async function dispatch() {
       await closeOwned(j);
       continue;
     }
-    if (j.tabId) {
+    if (j.tabId !== undefined) {
+      let tab: chrome.tabs.Tab;
       try {
-        const t = await chrome.tabs.get(j.tabId);
-        if (t.active) {
-          await db.fail(j.runId, "TAB_TAKEN_OVER");
-          continue;
-        }
-        if (
-          t.status === "complete" &&
-          ["loading", "opening", "sampling"].includes(j.phase)
-        )
-          await beginSampling(j);
+        tab = await chrome.tabs.get(j.tabId);
       } catch {
         await db.fail(j.runId, "TAB_CLOSED");
+        await releaseTab(j.runId, true);
+        continue;
       }
+      if (tab.active) {
+        await releaseTab(j.runId);
+        await db.fail(j.runId, "TAB_TAKEN_OVER");
+        continue;
+      }
+      if (
+        tab.status === "complete" &&
+        ["loading", "sampling"].includes(j.phase)
+      )
+        await sampleSafely(j);
     } else if (j.phase === "queued") safe(launch(j));
     // Another dispatcher may observe a launch between its atomic claim and
     // tabs.create completing. The persisted deadline handles abandoned launches.
@@ -413,6 +508,13 @@ async function handle(raw: any, sender: chrome.runtime.MessageSender) {
       outbox: await db.all<Outbox>("notificationOutbox"),
       settings: await db.get("settings", "global"),
       draft: (await chrome.storage.session.get("draft")).draft,
+      diagnostics:
+        (
+          await db.get<{ key: string; entries: unknown[] }>(
+            "settings",
+            "diagnostics",
+          )
+        )?.entries || [],
     };
   if (raw.type === "START_PICKER") {
     let id = raw.tabId;
@@ -528,6 +630,10 @@ async function handle(raw: any, sender: chrome.runtime.MessageSender) {
     });
     return;
   }
+  if (raw.type === "CLEAR_DIAGNOSTICS") {
+    await db.put("settings", { key: "diagnostics", entries: [] });
+    return;
+  }
   if (raw.type === "CLEAR_ALL") {
     const jobs = await db.all<Job>("jobs");
     await db.clear();
@@ -550,47 +656,77 @@ chrome.alarms.onAlarm.addListener((a) => {
 });
 chrome.runtime.onInstalled.addListener(() => safe(dispatch()));
 chrome.runtime.onStartup.addListener(() => safe(dispatch()));
-chrome.tabs.onUpdated.addListener((tabId, change) =>
+chrome.tabs.onUpdated.addListener((tabId, change, tab) =>
   safe(
     (async () => {
-      for (const j of await db.all<Job>("jobs"))
-        if (j.tabId === tabId && !terminal(j)) {
-          if (change.status === "loading" && j.phase === "sampling") {
-            await db.fail(j.runId, "TAB_TAKEN_OVER");
-            continue;
-          }
-          const m = await db.get<Monitor>("monitors", j.monitorId);
-          if (change.url && m) {
-            if (new URL(change.url).origin !== m.origin) {
-              await db.fail(j.runId, "REDIRECTED_ORIGIN");
-              continue;
-            }
-            if (j.phase === "sampling") {
-              await db.fail(j.runId, "TAB_TAKEN_OVER");
-              continue;
-            }
-          }
-          if (change.status === "complete" && j.phase === "loading")
-            await beginSampling(j);
+      if (
+        tab.url?.startsWith(chrome.runtime.getURL("job.html")) ||
+        change.url?.startsWith(chrome.runtime.getURL("job.html"))
+      )
+        return;
+      for (const job of await db.all<Job>("jobs")) {
+        if (
+          job.tabId !== tabId ||
+          job.ownsTab === false ||
+          (terminal(job) && !job.ownsTab)
+        )
+          continue;
+        if (
+          change.status === "loading" &&
+          (job.initialLoadComplete || job.phase === "sampling")
+        ) {
+          await releaseTab(job.runId);
+          await db.fail(job.runId, "TAB_TAKEN_OVER");
+          continue;
         }
+        if (terminal(job)) continue;
+        const monitor = await db.get<Monitor>("monitors", job.monitorId);
+        if (
+          change.url &&
+          !["http:", "https:"].includes(new URL(change.url).protocol)
+        ) {
+          await db.fail(job.runId, "LOAD_TIMEOUT");
+          await closeOwned(job);
+          continue;
+        }
+        if (
+          change.url &&
+          monitor &&
+          new URL(change.url).origin !== monitor.origin
+        ) {
+          await releaseTab(job.runId);
+          await db.fail(job.runId, "REDIRECTED_ORIGIN");
+          continue;
+        }
+        if (change.status === "complete" && job.phase === "loading") {
+          await patchJob(job.runId, (x) => {
+            x.initialLoadComplete = true;
+          });
+          await sampleSafely(job);
+        }
+      }
     })(),
   ),
 );
 chrome.tabs.onActivated.addListener(({ tabId }) =>
   safe(
     (async () => {
-      for (const j of await db.all<Job>("jobs"))
-        if (j.tabId === tabId && !terminal(j))
-          await db.fail(j.runId, "TAB_TAKEN_OVER");
+      for (const job of await db.all<Job>("jobs"))
+        if (job.tabId === tabId) {
+          await releaseTab(job.runId);
+          if (!terminal(job)) await db.fail(job.runId, "TAB_TAKEN_OVER");
+        }
     })(),
   ),
 );
 chrome.tabs.onRemoved.addListener((tabId) =>
   safe(
     (async () => {
-      for (const j of await db.all<Job>("jobs"))
-        if (j.tabId === tabId && !terminal(j))
-          await db.fail(j.runId, "TAB_CLOSED");
+      for (const job of await db.all<Job>("jobs"))
+        if (job.tabId === tabId) {
+          await releaseTab(job.runId, true);
+          if (!terminal(job)) await db.fail(job.runId, "TAB_CLOSED");
+        }
     })(),
   ),
 );

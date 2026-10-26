@@ -153,7 +153,9 @@ export async function acquire(session: string) {
     const monitors = await request<Monitor[]>(ms.getAll()),
       jobs = await request<Job[]>(js.getAll());
     const active = jobs.filter(
-      (j) => !["finished", "failed", "cancelled"].includes(j.phase),
+      (j) =>
+        !["finished", "failed", "cancelled"].includes(j.phase) ||
+        (j.ownsTab === true && j.session === session && j.tabId !== undefined),
     );
     const origins = new Set(
       active.map((j) => monitors.find((m) => m.id === j.monitorId)?.origin),
@@ -249,17 +251,19 @@ export async function mutate(id: string, action: string) {
   );
 }
 export async function fail(runId: string, code: string) {
-  await transaction(["jobs", "monitors"], async (tx) => {
+  await transaction(["jobs", "monitors", "settings"], async (tx) => {
     const js = tx.objectStore("jobs"),
       ms = tx.objectStore("monitors");
     const j = await request<Job | undefined>(js.get(runId));
     if (!j || ["finished", "failed", "cancelled"].includes(j.phase)) return;
     const m = await request<Monitor | undefined>(ms.get(j.monitorId));
+    const failedPhase = j.phase;
     j.phase = ["TAB_CLOSED", "TAB_TAKEN_OVER"].includes(code)
       ? "cancelled"
       : "failed";
     j.error = code;
     await request(js.put(j));
+    await appendDiagnostic(tx, code, {...j,phase:failedPhase});
     if (!m || m.configVersion !== j.configVersion || !m.enabled) return;
     const now = Date.now();
     if (j.phase === "cancelled") {
@@ -335,6 +339,7 @@ export async function prune() {
       for (const j of await request<Job[]>(tx.objectStore("jobs").getAll()))
         if (
           ["finished", "failed", "cancelled"].includes(j.phase) &&
+          j.ownsTab !== true &&
           j.startedAt < Date.now() - 86400000
         )
           await request(tx.objectStore("jobs").delete(j.runId));
@@ -502,4 +507,36 @@ export async function claimNotification(eventId: string) {
     await request(s.put(row));
     return row;
   });
+}
+
+export type Diagnostic = {
+  id: string;
+  occurredAt: number;
+  code: string;
+  monitorId?: string;
+  runId?: string;
+  phase?: string;
+};
+async function appendDiagnostic(tx: IDBTransaction, code: string, job?: Job) {
+  const store = tx.objectStore("settings");
+  const old = await request<{ key: string; entries: Diagnostic[] } | undefined>(
+    store.get("diagnostics"),
+  );
+  const entry: Diagnostic = {
+    id: crypto.randomUUID(),
+    occurredAt: Date.now(),
+    code: /^[A-Z_]{1,64}$/.test(code) ? code : "UNKNOWN_ERROR",
+    monitorId: job?.monitorId,
+    runId: job?.runId,
+    phase: job?.phase,
+  };
+  await request(
+    store.put({
+      key: "diagnostics",
+      entries: [...(old?.entries || []), entry].slice(-200),
+    }),
+  );
+}
+export async function diagnostic(code: string, job?: Job) {
+  await transaction(["settings"], (tx) => appendDiagnostic(tx, code, job));
 }

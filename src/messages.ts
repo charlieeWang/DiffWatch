@@ -33,6 +33,7 @@ export type Message =
   | { type: "CLEAR_HISTORY"; monitorId: string }
   | { type: "STATE" }
   | { type: "CLEAR_ALL" }
+  | { type: "CLEAR_DIAGNOSTICS" }
   | { type: "SETTINGS"; notificationsEnabled: boolean };
 export const send = async (message: Message) => {
   const r = await chrome.runtime.sendMessage(message);

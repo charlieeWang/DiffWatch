@@ -60,6 +60,8 @@ export type Job = {
   phase: string;
   tabId?: number;
   documentId?: string;
+  ownsTab?: boolean;
+  initialLoadComplete?: boolean;
   startedAt: number;
   deadlineAt: number;
   leaseUntil: number;
@@ -332,6 +334,8 @@ export function extract(doc: Document, c: Config): Content {
 }
 
 export const errorMessages: Record<string, string> = {
+  OFFLINE: "目前網路中斷，已保留基準並安排退避重試。",
+  TAB_CLEANUP_FAILED: "背景分頁未能關閉；回收完成前不會為此任務再開分頁。",
   PERMISSION_REQUIRED: "來源授權已撤銷，請重新授權。",
   SELECTOR_MISSING: "找不到選取區域，請重新選區。",
   SELECTOR_AMBIGUOUS: "選取器符合多個區域，請縮小選取範圍。",

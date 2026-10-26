@@ -75,6 +75,22 @@ function diff(a, b) {
   out.push(...a.slice(a.length - s).map((value) => ({ kind: "same", value })));
   return out;
 }
+var errorMessages = {
+  OFFLINE: "\u76EE\u524D\u7DB2\u8DEF\u4E2D\u65B7\uFF0C\u5DF2\u4FDD\u7559\u57FA\u6E96\u4E26\u5B89\u6392\u9000\u907F\u91CD\u8A66\u3002",
+  TAB_CLEANUP_FAILED: "\u80CC\u666F\u5206\u9801\u672A\u80FD\u95DC\u9589\uFF1B\u56DE\u6536\u5B8C\u6210\u524D\u4E0D\u6703\u70BA\u6B64\u4EFB\u52D9\u518D\u958B\u5206\u9801\u3002",
+  PERMISSION_REQUIRED: "\u4F86\u6E90\u6388\u6B0A\u5DF2\u64A4\u92B7\uFF0C\u8ACB\u91CD\u65B0\u6388\u6B0A\u3002",
+  SELECTOR_MISSING: "\u627E\u4E0D\u5230\u9078\u53D6\u5340\u57DF\uFF0C\u8ACB\u91CD\u65B0\u9078\u5340\u3002",
+  SELECTOR_AMBIGUOUS: "\u9078\u53D6\u5668\u7B26\u5408\u591A\u500B\u5340\u57DF\uFF0C\u8ACB\u7E2E\u5C0F\u9078\u53D6\u7BC4\u570D\u3002",
+  EMPTY_CONTENT: "\u5167\u5BB9\u70BA\u7A7A\uFF1B\u8ACB\u8ABF\u6574\u5EF6\u9072\u3001\u5340\u57DF\u6216\u660E\u78BA\u5141\u8A31\u7A7A\u5167\u5BB9\u3002",
+  UNSTABLE_CONTENT: "\u5167\u5BB9\u6301\u7E8C\u8B8A\u52D5\uFF1B\u8ACB\u5FFD\u7565\u5012\u6578\u7B49\u5340\u57DF\u6216\u8ABF\u6574\u5EF6\u9072\u3002",
+  LOGIN_OR_ERROR_DETECTED: "\u547D\u4E2D\u60A8\u8A2D\u5B9A\u7684\u932F\u8AA4\uFF0F\u767B\u5165 selector\uFF0C\u8ACB\u624B\u52D5\u8655\u7406\u3002",
+  REDIRECTED_ORIGIN: "\u7DB2\u7AD9\u5C0E\u5411\u5176\u4ED6\u4F86\u6E90\uFF0C\u5DF2\u505C\u6B62\uFF1B\u8ACB\u7DE8\u8F2F\u4EFB\u52D9\u7DB2\u5740\u3002",
+  SNAPSHOT_TOO_LARGE: "\u5340\u57DF\u8D85\u904E 20,000 \u7BC0\u9EDE\u6216 256 KiB\uFF0C\u8ACB\u7E2E\u5C0F\u7BC4\u570D\u3002",
+  STORAGE_FULL: "\u5132\u5B58\u7A7A\u9593\u4E0D\u8DB3\uFF0C\u57FA\u6E96\u672A\u66F4\u65B0\uFF1B\u8ACB\u5148\u6E05\u7406\u8CC7\u6599\u3002",
+  LOAD_TIMEOUT: "\u8F09\u5165\u6216\u53D6\u6A23\u903E\u6642\uFF0C\u5C07\u4F9D\u9000\u907F\u6642\u9593\u91CD\u8A66\u3002",
+  WORKER_INTERRUPTED: "\u5DE5\u4F5C\u88AB\u4E2D\u65B7\uFF0C\u5DF2\u4FDD\u7559\u57FA\u6E96\u4E26\u5B89\u6392\u91CD\u8A66\u3002",
+  INVALID_SELECTOR: "CSS selector \u8A9E\u6CD5\u7121\u6548\uFF0C\u8ACB\u7DE8\u8F2F\u8A2D\u5B9A\u3002"
+};
 
 // src/messages.ts
 var send = async (message2) => {
@@ -194,6 +210,10 @@ function dashboard() {
   controls.append(
     button("\u65B0\u589E\u4EFB\u52D9", () => form()),
     button("\u8CC7\u6599\u7BA1\u7406", dataPage),
+    button("\u932F\u8AA4\u7D00\u9304", async () => {
+      state = await send({ type: "STATE" });
+      diagnosticsPage();
+    }),
     reload
   );
   app.append(
@@ -728,6 +748,79 @@ function history(id, eventId) {
     }
     columns.append(left, right);
     card.append(columns);
+    app.append(card);
+  }
+}
+function diagnosticsPage() {
+  editing = true;
+  app.replaceChildren(el("h1", "\u932F\u8AA4\u7D00\u9304"), message);
+  app.append(
+    el(
+      "p",
+      "\u4FDD\u7559\u6700\u8FD1 200 \u7B46\u5DE5\u4F5C\u932F\u8AA4\u8207\u53D6\u6D88\u7D00\u9304\uFF0C\u4E0D\u542B\u7DB2\u9801\u6B63\u6587\u3001\u7DB2\u5740\u6216\u767B\u5165\u8CC7\u8A0A\u3002\u820A\u7248\u932F\u8AA4\u4E0D\u6703\u81EA\u52D5\u88DC\u56DE\u3002"
+    ),
+    button("\u8FD4\u56DE", () => {
+      editing = false;
+      void refresh();
+    }),
+    button("\u91CD\u65B0\u6574\u7406", async () => {
+      state = await send({ type: "STATE" });
+      diagnosticsPage();
+    }),
+    button("\u532F\u51FA\u7D00\u9304", () => {
+      const blob = new Blob(
+        [
+          JSON.stringify(
+            {
+              app: "DiffWatch",
+              version: chrome.runtime.getManifest().version,
+              exportedAt: Date.now(),
+              entries: state.diagnostics || []
+            },
+            null,
+            2
+          )
+        ],
+        { type: "application/json" }
+      );
+      const link = el("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "diffwatch-diagnostics.json";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1e3);
+    }),
+    button("\u6E05\u9664\u7D00\u9304", async () => {
+      if (confirm("\u6E05\u9664\u5168\u90E8\u932F\u8AA4\u7D00\u9304\uFF1F\u4EFB\u52D9\u8207\u8B8A\u66F4\u6B77\u53F2\u6703\u4FDD\u7559\u3002")) {
+        await send({ type: "CLEAR_DIAGNOSTICS" });
+        state = await send({ type: "STATE" });
+        diagnosticsPage();
+      }
+    })
+  );
+  const entries = [...state.diagnostics || []].reverse();
+  if (!entries.length) app.append(el("p", "\u76EE\u524D\u6C92\u6709\u932F\u8AA4\u7D00\u9304\u3002"));
+  for (const entry of entries) {
+    const card = el("article");
+    const monitor = state.monitors.find(
+      (m) => m.id === entry.monitorId
+    );
+    card.append(
+      el("h2", `${time(entry.occurredAt)} \xB7 ${entry.code}`),
+      el("p", monitor?.name || entry.monitorId || "\u7CFB\u7D71"),
+      el(
+        "p",
+        errorMessages[entry.code] || {
+          TAB_CLOSED: "\u4F7F\u7528\u8005\u95DC\u9589\u5DE5\u4F5C\u5206\u9801\uFF0C\u7576\u6B21\u6AA2\u67E5\u5DF2\u53D6\u6D88\u3002",
+          TAB_TAKEN_OVER: "\u4F7F\u7528\u8005\u63A5\u7BA1\u6216\u5C0E\u89BD\u5206\u9801\uFF0C\u7576\u6B21\u6AA2\u67E5\u5DF2\u53D6\u6D88\u3002"
+        }[entry.code] || "\u6AA2\u67E5\u5931\u6557\uFF0C\u8ACB\u9644\u4E0A\u6B64\u7D00\u9304\u56DE\u5831\u3002"
+      ),
+      el(
+        "pre",
+        `\u5DE5\u4F5C\uFF1A${entry.runId || "\u2014"}
+\u968E\u6BB5\uFF1A${entry.phase || "\u2014"}
+\u8A3A\u65B7\uFF1A${entry.id}`
+      )
+    );
     app.append(card);
   }
 }

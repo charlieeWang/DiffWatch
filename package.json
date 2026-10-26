@@ -1,6 +1,6 @@
 {
   "name": "diffwatch",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "fixture": "node fixtures/server.mjs",
     "test:e2e": "node tests/e2e.mjs",
     "test:picker": "node tests/picker-flow.mjs",
+    "test:offline": "node tests/offline.mjs",
     "format": "prettier --write src tests build.mjs fixtures public/style.css"
   },
   "devDependencies": {

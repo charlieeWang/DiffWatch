@@ -66,6 +66,8 @@ async function digest(c) {
 var changed = (a, b) => canonical(a) !== canonical(b);
 var backoff = (interval, failures) => Math.max(interval, Math.min(60, 2 ** Math.min(20, failures - 1))) * 6e4;
 var errorMessages = {
+  OFFLINE: "\u76EE\u524D\u7DB2\u8DEF\u4E2D\u65B7\uFF0C\u5DF2\u4FDD\u7559\u57FA\u6E96\u4E26\u5B89\u6392\u9000\u907F\u91CD\u8A66\u3002",
+  TAB_CLEANUP_FAILED: "\u80CC\u666F\u5206\u9801\u672A\u80FD\u95DC\u9589\uFF1B\u56DE\u6536\u5B8C\u6210\u524D\u4E0D\u6703\u70BA\u6B64\u4EFB\u52D9\u518D\u958B\u5206\u9801\u3002",
   PERMISSION_REQUIRED: "\u4F86\u6E90\u6388\u6B0A\u5DF2\u64A4\u92B7\uFF0C\u8ACB\u91CD\u65B0\u6388\u6B0A\u3002",
   SELECTOR_MISSING: "\u627E\u4E0D\u5230\u9078\u53D6\u5340\u57DF\uFF0C\u8ACB\u91CD\u65B0\u9078\u5340\u3002",
   SELECTOR_AMBIGUOUS: "\u9078\u53D6\u5668\u7B26\u5408\u591A\u500B\u5340\u57DF\uFF0C\u8ACB\u7E2E\u5C0F\u9078\u53D6\u7BC4\u570D\u3002",
@@ -206,7 +208,7 @@ async function acquire(session2) {
     const ms = tx.objectStore("monitors"), js = tx.objectStore("jobs");
     const monitors = await request(ms.getAll()), jobs = await request(js.getAll());
     const active = jobs.filter(
-      (j) => !["finished", "failed", "cancelled"].includes(j.phase)
+      (j) => !["finished", "failed", "cancelled"].includes(j.phase) || j.ownsTab === true && j.session === session2 && j.tabId !== void 0
     );
     const origins = new Set(
       active.map((j) => monitors.find((m) => m.id === j.monitorId)?.origin)
@@ -290,14 +292,16 @@ async function mutate(id, action) {
   );
 }
 async function fail(runId, code) {
-  await transaction(["jobs", "monitors"], async (tx) => {
+  await transaction(["jobs", "monitors", "settings"], async (tx) => {
     const js = tx.objectStore("jobs"), ms = tx.objectStore("monitors");
     const j = await request(js.get(runId));
     if (!j || ["finished", "failed", "cancelled"].includes(j.phase)) return;
     const m = await request(ms.get(j.monitorId));
+    const failedPhase = j.phase;
     j.phase = ["TAB_CLOSED", "TAB_TAKEN_OVER"].includes(code) ? "cancelled" : "failed";
     j.error = code;
     await request(js.put(j));
+    await appendDiagnostic(tx, code, { ...j, phase: failedPhase });
     if (!m || m.configVersion !== j.configVersion || !m.enabled) return;
     const now = Date.now();
     if (j.phase === "cancelled") {
@@ -359,7 +363,7 @@ async function prune() {
     async (tx) => {
       await cleanup(tx);
       for (const j of await request(tx.objectStore("jobs").getAll()))
-        if (["finished", "failed", "cancelled"].includes(j.phase) && j.startedAt < Date.now() - 864e5)
+        if (["finished", "failed", "cancelled"].includes(j.phase) && j.ownsTab !== true && j.startedAt < Date.now() - 864e5)
           await request(tx.objectStore("jobs").delete(j.runId));
     }
   );
@@ -505,6 +509,29 @@ async function claimNotification(eventId) {
     return row;
   });
 }
+async function appendDiagnostic(tx, code, job) {
+  const store = tx.objectStore("settings");
+  const old = await request(
+    store.get("diagnostics")
+  );
+  const entry = {
+    id: crypto.randomUUID(),
+    occurredAt: Date.now(),
+    code: /^[A-Z_]{1,64}$/.test(code) ? code : "UNKNOWN_ERROR",
+    monitorId: job?.monitorId,
+    runId: job?.runId,
+    phase: job?.phase
+  };
+  await request(
+    store.put({
+      key: "diagnostics",
+      entries: [...old?.entries || [], entry].slice(-200)
+    })
+  );
+}
+async function diagnostic(code, job) {
+  await transaction(["settings"], (tx) => appendDiagnostic(tx, code, job));
+}
 
 // src/background.ts
 var terminal = (j) => ["finished", "failed", "cancelled"].includes(j.phase);
@@ -535,32 +562,73 @@ async function patchJob(runId, fn) {
     return j;
   });
 }
-async function closeOwned(j) {
-  const current = await get("jobs", j.runId);
-  if ((current?.error || j.error) === "TAB_TAKEN_OVER" || (current?.error || j.error) === "REDIRECTED_ORIGIN")
-    return;
-  if (!j.tabId || j.session !== await session()) return;
-  try {
-    const tab = await chrome.tabs.get(j.tabId);
-    if (tab.active) return;
-    const probe = await chrome.tabs.sendMessage(
-      j.tabId,
-      { type: "PROBE" },
-      { frameId: 0 }
-    );
-    if (probe?.runIds?.includes(j.runId)) {
-      await chrome.tabs.remove(j.tabId);
-      await transaction(["jobs"], async (tx) => {
-        const s = tx.objectStore("jobs"), v = await request(s.get(j.runId));
-        if (v && v.tabId === j.tabId) {
-          v.tabId = void 0;
-          v.documentId = void 0;
-          await request(s.put(v));
-        }
-      });
+async function releaseTab(runId, clear2 = false) {
+  await transaction(["jobs"], async (tx) => {
+    const store = tx.objectStore("jobs");
+    const job = await request(store.get(runId));
+    if (!job) return;
+    job.ownsTab = false;
+    if (clear2) {
+      job.tabId = void 0;
+      job.documentId = void 0;
     }
-  } catch {
+    await request(store.put(job));
+  });
+}
+async function closeOwned(original) {
+  const job = await get("jobs", original.runId) || original;
+  if (job.tabId === void 0 || job.ownsTab === false) return;
+  if (job.session !== await session() || ["TAB_TAKEN_OVER", "REDIRECTED_ORIGIN"].includes(job.error || "")) {
+    await releaseTab(job.runId);
+    return;
   }
+  let tab;
+  try {
+    tab = await chrome.tabs.get(job.tabId);
+  } catch {
+    await releaseTab(job.runId, true);
+    return;
+  }
+  if (tab.active) {
+    await releaseTab(job.runId);
+    return;
+  }
+  let owned = job.ownsTab === true;
+  if (!owned) {
+    try {
+      owned = (await chrome.tabs.sendMessage(
+        job.tabId,
+        { type: "PROBE" },
+        { frameId: 0 }
+      ))?.runIds?.includes(job.runId);
+    } catch {
+    }
+  }
+  if (!owned) {
+    await releaseTab(job.runId);
+    return;
+  }
+  const latest = await get("jobs", job.runId);
+  if (latest?.ownsTab === false || (await chrome.tabs.get(job.tabId)).active)
+    return;
+  try {
+    await chrome.tabs.remove(job.tabId);
+    await releaseTab(job.runId, true);
+  } catch {
+    await diagnostic("TAB_CLEANUP_FAILED", job);
+  }
+}
+async function sampleSafely(job) {
+  try {
+    await beginSampling(job);
+  } catch {
+    await fail(
+      job.runId,
+      navigator.onLine === false ? "OFFLINE" : "LOAD_TIMEOUT"
+    );
+  }
+  const latest = await get("jobs", job.runId);
+  if (latest && terminal(latest)) await closeOwned(latest);
 }
 async function badge() {
   const [ms, events] = await Promise.all([
@@ -616,7 +684,10 @@ async function beginSampling(j) {
     await fail(j.runId, "TAB_TAKEN_OVER");
     return;
   }
-  if (!tab.url || new URL(tab.url).origin !== m.origin) {
+  if (!tab.url || tab.url.startsWith(chrome.runtime.getURL("job.html"))) return;
+  if (!["http:", "https:"].includes(new URL(tab.url).protocol))
+    throw Error("LOAD_TIMEOUT");
+  if (new URL(tab.url).origin !== m.origin) {
     await fail(j.runId, "REDIRECTED_ORIGIN");
     return;
   }
@@ -667,18 +738,49 @@ async function launch(j) {
     await patchJob(j.runId, (x) => {
       x.phase = "opening";
     });
-    const tab = await chrome.tabs.create({ url: m.url, active: false });
-    const current = await patchJob(j.runId, (x) => {
-      x.tabId = tab.id;
+    if (navigator.onLine === false) {
+      await fail(j.runId, "OFFLINE");
+      return;
+    }
+    const bootstrap = chrome.runtime.getURL("job.html#" + j.runId);
+    const tab = await chrome.tabs.create({ url: bootstrap, active: false });
+    if (tab.id === void 0) throw Error("LOAD_TIMEOUT");
+    const observed = await chrome.tabs.get(tab.id);
+    const current = await transaction(["jobs"], async (tx) => {
+      const store = tx.objectStore("jobs"), row = await request(store.get(j.runId));
+      if (!row) return;
+      row.tabId = tab.id;
+      row.ownsTab = !observed.active && (!observed.url || observed.url === "about:blank" || observed.url === bootstrap || observed.pendingUrl === bootstrap);
+      await request(store.put(row));
+      return row;
+    });
+    if (!current) {
+      const check = await chrome.tabs.get(tab.id);
+      if (!check.active && check.url === bootstrap)
+        await chrome.tabs.remove(tab.id);
+      return;
+    }
+    if (!current.ownsTab) {
+      await fail(j.runId, "TAB_TAKEN_OVER");
+      return;
+    }
+    if (terminal(current)) {
+      await closeOwned(current);
+      return;
+    }
+    await patchJob(j.runId, (x) => {
       x.phase = "loading";
     });
-    if (!current || terminal(current)) return;
-    if (tab.status === "complete") await beginSampling(current);
+    const loaded = await chrome.tabs.update(tab.id, { url: m.url });
+    if (loaded?.status === "complete" && loaded.url && new URL(loaded.url).origin === m.origin)
+      await sampleSafely({ ...current, phase: "loading" });
   } catch (e) {
     await fail(
       j.runId,
       e.message === "PERMISSION_REQUIRED" ? "PERMISSION_REQUIRED" : "LOAD_TIMEOUT"
     );
+    const current = await get("jobs", j.runId);
+    if (current) await closeOwned(current);
   }
 }
 async function dispatch() {
@@ -697,18 +799,22 @@ async function dispatch() {
       await closeOwned(j);
       continue;
     }
-    if (j.tabId) {
+    if (j.tabId !== void 0) {
+      let tab;
       try {
-        const t = await chrome.tabs.get(j.tabId);
-        if (t.active) {
-          await fail(j.runId, "TAB_TAKEN_OVER");
-          continue;
-        }
-        if (t.status === "complete" && ["loading", "opening", "sampling"].includes(j.phase))
-          await beginSampling(j);
+        tab = await chrome.tabs.get(j.tabId);
       } catch {
         await fail(j.runId, "TAB_CLOSED");
+        await releaseTab(j.runId, true);
+        continue;
       }
+      if (tab.active) {
+        await releaseTab(j.runId);
+        await fail(j.runId, "TAB_TAKEN_OVER");
+        continue;
+      }
+      if (tab.status === "complete" && ["loading", "sampling"].includes(j.phase))
+        await sampleSafely(j);
     } else if (j.phase === "queued") safe(launch(j));
     else if (j.phase !== "opening")
       await fail(j.runId, "WORKER_INTERRUPTED");
@@ -826,7 +932,11 @@ async function handle(raw, sender) {
       jobs: await all("jobs"),
       outbox: await all("notificationOutbox"),
       settings: await get("settings", "global"),
-      draft: (await chrome.storage.session.get("draft")).draft
+      draft: (await chrome.storage.session.get("draft")).draft,
+      diagnostics: (await get(
+        "settings",
+        "diagnostics"
+      ))?.entries || []
     };
   if (raw.type === "START_PICKER") {
     let id = raw.tabId;
@@ -937,6 +1047,10 @@ async function handle(raw, sender) {
     });
     return;
   }
+  if (raw.type === "CLEAR_DIAGNOSTICS") {
+    await put("settings", { key: "diagnostics", entries: [] });
+    return;
+  }
   if (raw.type === "CLEAR_ALL") {
     const jobs = await all("jobs");
     await clear();
@@ -960,46 +1074,59 @@ chrome.alarms.onAlarm.addListener((a) => {
 chrome.runtime.onInstalled.addListener(() => safe(dispatch()));
 chrome.runtime.onStartup.addListener(() => safe(dispatch()));
 chrome.tabs.onUpdated.addListener(
-  (tabId, change) => safe(
+  (tabId, change, tab) => safe(
     (async () => {
-      for (const j of await all("jobs"))
-        if (j.tabId === tabId && !terminal(j)) {
-          if (change.status === "loading" && j.phase === "sampling") {
-            await fail(j.runId, "TAB_TAKEN_OVER");
-            continue;
-          }
-          const m = await get("monitors", j.monitorId);
-          if (change.url && m) {
-            if (new URL(change.url).origin !== m.origin) {
-              await fail(j.runId, "REDIRECTED_ORIGIN");
-              continue;
-            }
-            if (j.phase === "sampling") {
-              await fail(j.runId, "TAB_TAKEN_OVER");
-              continue;
-            }
-          }
-          if (change.status === "complete" && j.phase === "loading")
-            await beginSampling(j);
+      if (tab.url?.startsWith(chrome.runtime.getURL("job.html")) || change.url?.startsWith(chrome.runtime.getURL("job.html")))
+        return;
+      for (const job of await all("jobs")) {
+        if (job.tabId !== tabId || job.ownsTab === false || terminal(job) && !job.ownsTab)
+          continue;
+        if (change.status === "loading" && (job.initialLoadComplete || job.phase === "sampling")) {
+          await releaseTab(job.runId);
+          await fail(job.runId, "TAB_TAKEN_OVER");
+          continue;
         }
+        if (terminal(job)) continue;
+        const monitor = await get("monitors", job.monitorId);
+        if (change.url && !["http:", "https:"].includes(new URL(change.url).protocol)) {
+          await fail(job.runId, "LOAD_TIMEOUT");
+          await closeOwned(job);
+          continue;
+        }
+        if (change.url && monitor && new URL(change.url).origin !== monitor.origin) {
+          await releaseTab(job.runId);
+          await fail(job.runId, "REDIRECTED_ORIGIN");
+          continue;
+        }
+        if (change.status === "complete" && job.phase === "loading") {
+          await patchJob(job.runId, (x) => {
+            x.initialLoadComplete = true;
+          });
+          await sampleSafely(job);
+        }
+      }
     })()
   )
 );
 chrome.tabs.onActivated.addListener(
   ({ tabId }) => safe(
     (async () => {
-      for (const j of await all("jobs"))
-        if (j.tabId === tabId && !terminal(j))
-          await fail(j.runId, "TAB_TAKEN_OVER");
+      for (const job of await all("jobs"))
+        if (job.tabId === tabId) {
+          await releaseTab(job.runId);
+          if (!terminal(job)) await fail(job.runId, "TAB_TAKEN_OVER");
+        }
     })()
   )
 );
 chrome.tabs.onRemoved.addListener(
   (tabId) => safe(
     (async () => {
-      for (const j of await all("jobs"))
-        if (j.tabId === tabId && !terminal(j))
-          await fail(j.runId, "TAB_CLOSED");
+      for (const job of await all("jobs"))
+        if (job.tabId === tabId) {
+          await releaseTab(job.runId, true);
+          if (!terminal(job)) await fail(job.runId, "TAB_CLOSED");
+        }
     })()
   )
 );

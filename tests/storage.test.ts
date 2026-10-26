@@ -26,6 +26,36 @@ const content = (text: string): Content => ({
   links: [],
   images: [],
 });
+test("failed but unreclaimed owned tabs keep lease capacity and block reopens", async () => {
+  await db.clear();
+  const monitor = await db.save(c);
+  const job = (await db.acquire("s"))[0];
+  await db.put("jobs", { ...job, phase: "failed", ownsTab: true, tabId: 42 });
+  assert.equal((await db.acquire("s")).length, 0);
+  await db.put("jobs", { ...job, phase: "failed", ownsTab: false, tabId: 42 });
+  assert.equal((await db.acquire("s")).length, 1);
+});
+test("failure diagnostics are bounded, sanitized and do not change baseline", async () => {
+  await db.clear();
+  const monitor = await db.save(c);
+  const job = (await db.acquire("s"))[0];
+  await db.fail(job.runId, "LOAD_TIMEOUT");
+  await db.fail(job.runId, "LOAD_TIMEOUT");
+  assert.equal(
+    (await db.get<Monitor>("monitors", monitor.id))!.consecutiveFailures,
+    1,
+  );
+  let logs = await db.get<any>("settings", "diagnostics");
+  assert.equal(logs.entries.length, 1);
+  assert.equal(logs.entries[0].code, "LOAD_TIMEOUT");
+  for (let i = 0; i < 205; i++) await db.diagnostic("OFFLINE");
+  await db.diagnostic("https://private.example/?token=secret");
+  logs = await db.get<any>("settings", "diagnostics");
+  assert.equal(logs.entries.length, 200);
+  assert.equal(logs.entries.at(-1).code, "UNKNOWN_ERROR");
+  assert(!JSON.stringify(logs).includes("secret"));
+  assert.equal((await db.all("snapshots")).length, 0);
+});
 test("clear history preserves baseline, other tasks, and future comparisons", async () => {
   await db.clear();
   const m = await db.save(c);
