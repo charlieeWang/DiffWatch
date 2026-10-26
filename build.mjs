@@ -20,7 +20,7 @@ await build({
 for (const page of ["popup", "dashboard"])
   await writeFile(
     `dist/${page}.html`,
-    `<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DOM 區域監控</title><link rel="stylesheet" href="style.css"><body data-page="${page}"><main id="app"></main><script type="module" src="ui.js"></script></body></html>`,
+    `<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DiffWatch</title><link rel="stylesheet" href="style.css"><body data-page="${page}"><main id="app"></main><script type="module" src="ui.js"></script></body></html>`,
   );
 await copyFile("public/style.css", "dist/style.css");
 await copyFile("public/icon.png", "dist/icon.png");
@@ -29,7 +29,7 @@ await writeFile(
   JSON.stringify(
     {
       manifest_version: 3,
-      name: "DOM 區域監控",
+      name: "DiffWatch",
       version: "1.0.0",
       description:
         "於專用背景分頁比較選定 DOM 文字、連結與圖片網址，所有資料留在本機。",

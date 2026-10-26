@@ -112,7 +112,7 @@ async function notify() {
       await chrome.notifications.create(row.notificationId, {
         type: "basic",
         iconUrl: "icon.png",
-        title: "DOM 區域監控",
+        title: "DiffWatch",
         message: `${m.name}：偵測到內容變更`,
       });
       row.state = "sent";
@@ -666,7 +666,7 @@ async function errorNotices() {
         await chrome.notifications.create("error:" + m.id, {
           type: "basic",
           iconUrl: "icon.png",
-          title: "DOM 區域監控：檢查錯誤",
+          title: "DiffWatch：檢查錯誤",
           message: m.name + "：" + m.lastError.userMessage,
         });
       } catch {}

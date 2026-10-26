@@ -1,8 +1,10 @@
-# DOM 區域監控：專案交接與開發手冊
+# DiffWatch：專案交接與開發手冊
 
-更新日期：2026-10-25。讀者假設：有基本程式／網頁概念，但從未開發 Chrome 擴充功能。
+更新日期：2026-10-26。讀者假設：有基本程式／網頁概念，但從未開發 Chrome 擴充功能。
 
-本文件依目前原始碼說明實際行為。完整需求見 [SPEC.md](../SPEC.md)，快速操作見 [README.md](../README.md)，實測與人工驗收缺口見 [ACCEPTANCE.md](../ACCEPTANCE.md)。規格不等於所有功能已驗收通過。
+本文件依目前原始碼說明實際行為。完整需求見 [SPEC.md](../SPEC.md)，快速操作見 [README.md](../README.md)，實測與人工驗收缺口見 [ACCEPTANCE.md](../ACCEPTANCE.md)。規格不等於所有功能已驗收通過。建置、權限與限制的集中參考見 [DEVELOPMENT.md](DEVELOPMENT.md)。
+
+專案名稱為 DiffWatch；為保留現有 Chrome 資料與相容性，IndexedDB 名稱 dom-watch、內部訊息／overlay 標記及目前載入資料夾仍沿用原識別，不因品牌更名清庫或搬移載入位置。
 
 ## 1. 產品與目前範圍
 

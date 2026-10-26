@@ -594,7 +594,7 @@ async function notify() {
       await chrome.notifications.create(row.notificationId, {
         type: "basic",
         iconUrl: "icon.png",
-        title: "DOM \u5340\u57DF\u76E3\u63A7",
+        title: "DiffWatch",
         message: `${m.name}\uFF1A\u5075\u6E2C\u5230\u5167\u5BB9\u8B8A\u66F4`
       });
       row.state = "sent";
@@ -1063,7 +1063,7 @@ async function errorNotices() {
         await chrome.notifications.create("error:" + m.id, {
           type: "basic",
           iconUrl: "icon.png",
-          title: "DOM \u5340\u57DF\u76E3\u63A7\uFF1A\u6AA2\u67E5\u932F\u8AA4",
+          title: "DiffWatch\uFF1A\u6AA2\u67E5\u932F\u8AA4",
           message: m.name + "\uFF1A" + m.lastError.userMessage
         });
       } catch {

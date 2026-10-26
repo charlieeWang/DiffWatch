@@ -152,7 +152,7 @@ async function refresh() {
   if (!editing) dashboard();
 }
 function popup() {
-  app.replaceChildren(el("h1", "DOM \u5340\u57DF\u76E3\u63A7"), message);
+  app.replaceChildren(el("h1", "DiffWatch"), message);
   const ms = state.monitors, es = state.events;
   app.append(
     el(
@@ -170,7 +170,7 @@ function popup() {
   );
 }
 function dashboard() {
-  app.replaceChildren(el("h1", "DOM \u5340\u57DF\u76E3\u63A7"), message);
+  app.replaceChildren(el("h1", "DiffWatch"), message);
   const controls = el("nav");
   const reload = button("", refresh);
   reload.className = "refresh-icon";
@@ -766,7 +766,7 @@ function dataPage() {
       );
       const a = el("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "dom-watch-settings.json";
+      a.download = "diffwatch-settings.json";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1e3);
     })
