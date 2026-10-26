@@ -459,8 +459,7 @@ function form(m?: Monitor) {
   const checks: Record<string, HTMLInputElement> = {};
   const capturePanel = el("section");
   capturePanel.className = "capture-preview";
-  capturePanel.append(el("h2", "要比較哪些內容？"));
-  f.append(capturePanel);
+  capturePanel.append(el("h2", "調整監控內容"));
   const captureChoices = el("div");
   captureChoices.className = "capture-choices";
   capturePanel.append(captureChoices);
@@ -519,7 +518,7 @@ function form(m?: Monitor) {
         : "。勾選可即時切換下方顯示的內容；不會重新擷取網頁或修改已儲存的快照。");
     if (!sample) {
       sampleBody.append(
-        el("p", "選好區域後，按「授權並驗證預覽」即可查看實際擷取的內容。"),
+        el("p", "選好區域後，按「授權並擷取快照」即可查看實際擷取的內容。"),
       );
       return;
     }
@@ -616,7 +615,7 @@ function form(m?: Monitor) {
   selectionTools.className = "selection-tools";
   selectionTools.append(el("legend", "網頁與選區設定"), open);
   regionSummary.after(selectionTools);
-  const pre = button("授權並驗證預覽", async () => {
+  const pre = button("授權並擷取快照", async () => {
     const c = read();
     const requestedKey = JSON.stringify(c);
     previewKey = "";
@@ -635,7 +634,7 @@ function form(m?: Monitor) {
       sampleLabel = `本次驗證預覽 · ${time(Date.now())}（尚未儲存）`;
       renderSample();
       preview.textContent =
-        "驗證成功，擷取內容已顯示在上方預覽。儲存後會重新建立比對基準。";
+        "驗證成功，擷取內容已顯示在「調整監控內容」。儲存後會重新建立比對基準。";
       previewKey = requestedKey;
     } finally {
       previewBusy = false;
@@ -644,7 +643,7 @@ function form(m?: Monitor) {
     }
   });
   pre.type = "button";
-  f.append(pre, preview);
+  f.append(pre, capturePanel, preview);
   const save = el("button", "授權並儲存");
   save.type = "submit";
   const saveHint = el("p");
@@ -667,7 +666,7 @@ function form(m?: Monitor) {
       : !valid
         ? "請完成有效的任務設定，再驗證預覽。"
         : needsPreview
-          ? "請先按「授權並驗證預覽」，成功後才能儲存。"
+          ? "請先按「授權並擷取快照」，成功後才能儲存。"
           : "設定已可儲存。";
   }
   f.addEventListener("input", updateSave);

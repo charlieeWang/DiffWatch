@@ -498,8 +498,7 @@ function form(m) {
   const checks = {};
   const capturePanel = el("section");
   capturePanel.className = "capture-preview";
-  capturePanel.append(el("h2", "\u8981\u6BD4\u8F03\u54EA\u4E9B\u5167\u5BB9\uFF1F"));
-  f.append(capturePanel);
+  capturePanel.append(el("h2", "\u8ABF\u6574\u76E3\u63A7\u5167\u5BB9"));
   const captureChoices = el("div");
   captureChoices.className = "capture-choices";
   capturePanel.append(captureChoices);
@@ -546,7 +545,7 @@ function form(m) {
     sampleMeta.textContent = sampleLabel + (sample && currentConfig !== sampleConfig ? "\u3002\u7DB2\u5740\u6216\u9078\u5340\u5DF2\u4FEE\u6539\uFF0C\u4EE5\u4E0B\u4ECD\u662F\u539F\u7BC4\u570D\u7684\u5167\u5BB9\uFF0C\u8ACB\u91CD\u65B0\u9A57\u8B49\u9810\u89BD\u3002" : "\u3002\u52FE\u9078\u53EF\u5373\u6642\u5207\u63DB\u4E0B\u65B9\u986F\u793A\u7684\u5167\u5BB9\uFF1B\u4E0D\u6703\u91CD\u65B0\u64F7\u53D6\u7DB2\u9801\u6216\u4FEE\u6539\u5DF2\u5132\u5B58\u7684\u5FEB\u7167\u3002");
     if (!sample) {
       sampleBody.append(
-        el("p", "\u9078\u597D\u5340\u57DF\u5F8C\uFF0C\u6309\u300C\u6388\u6B0A\u4E26\u9A57\u8B49\u9810\u89BD\u300D\u5373\u53EF\u67E5\u770B\u5BE6\u969B\u64F7\u53D6\u7684\u5167\u5BB9\u3002")
+        el("p", "\u9078\u597D\u5340\u57DF\u5F8C\uFF0C\u6309\u300C\u6388\u6B0A\u4E26\u64F7\u53D6\u5FEB\u7167\u300D\u5373\u53EF\u67E5\u770B\u5BE6\u969B\u64F7\u53D6\u7684\u5167\u5BB9\u3002")
       );
       return;
     }
@@ -637,7 +636,7 @@ ${v.src}`)]
   selectionTools.className = "selection-tools";
   selectionTools.append(el("legend", "\u7DB2\u9801\u8207\u9078\u5340\u8A2D\u5B9A"), open);
   regionSummary.after(selectionTools);
-  const pre = button("\u6388\u6B0A\u4E26\u9A57\u8B49\u9810\u89BD", async () => {
+  const pre = button("\u6388\u6B0A\u4E26\u64F7\u53D6\u5FEB\u7167", async () => {
     const c = read();
     const requestedKey = JSON.stringify(c);
     previewKey = "";
@@ -655,7 +654,7 @@ ${v.src}`)]
       sampleConfig = JSON.stringify([c.url, c.selector, c.ignoreSelectors]);
       sampleLabel = `\u672C\u6B21\u9A57\u8B49\u9810\u89BD \xB7 ${time(Date.now())}\uFF08\u5C1A\u672A\u5132\u5B58\uFF09`;
       renderSample();
-      preview.textContent = "\u9A57\u8B49\u6210\u529F\uFF0C\u64F7\u53D6\u5167\u5BB9\u5DF2\u986F\u793A\u5728\u4E0A\u65B9\u9810\u89BD\u3002\u5132\u5B58\u5F8C\u6703\u91CD\u65B0\u5EFA\u7ACB\u6BD4\u5C0D\u57FA\u6E96\u3002";
+      preview.textContent = "\u9A57\u8B49\u6210\u529F\uFF0C\u64F7\u53D6\u5167\u5BB9\u5DF2\u986F\u793A\u5728\u300C\u8ABF\u6574\u76E3\u63A7\u5167\u5BB9\u300D\u3002\u5132\u5B58\u5F8C\u6703\u91CD\u65B0\u5EFA\u7ACB\u6BD4\u5C0D\u57FA\u6E96\u3002";
       previewKey = requestedKey;
     } finally {
       previewBusy = false;
@@ -664,7 +663,7 @@ ${v.src}`)]
     }
   });
   pre.type = "button";
-  f.append(pre, preview);
+  f.append(pre, capturePanel, preview);
   const save = el("button", "\u6388\u6B0A\u4E26\u5132\u5B58");
   save.type = "submit";
   const saveHint = el("p");
@@ -683,7 +682,7 @@ ${v.src}`)]
     } catch {
     }
     save.disabled = !valid || needsPreview || previewBusy || saving;
-    saveHint.textContent = previewBusy ? "\u6B63\u5728\u9A57\u8B49\u9810\u89BD\u2026" : !valid ? "\u8ACB\u5B8C\u6210\u6709\u6548\u7684\u4EFB\u52D9\u8A2D\u5B9A\uFF0C\u518D\u9A57\u8B49\u9810\u89BD\u3002" : needsPreview ? "\u8ACB\u5148\u6309\u300C\u6388\u6B0A\u4E26\u9A57\u8B49\u9810\u89BD\u300D\uFF0C\u6210\u529F\u5F8C\u624D\u80FD\u5132\u5B58\u3002" : "\u8A2D\u5B9A\u5DF2\u53EF\u5132\u5B58\u3002";
+    saveHint.textContent = previewBusy ? "\u6B63\u5728\u9A57\u8B49\u9810\u89BD\u2026" : !valid ? "\u8ACB\u5B8C\u6210\u6709\u6548\u7684\u4EFB\u52D9\u8A2D\u5B9A\uFF0C\u518D\u9A57\u8B49\u9810\u89BD\u3002" : needsPreview ? "\u8ACB\u5148\u6309\u300C\u6388\u6B0A\u4E26\u64F7\u53D6\u5FEB\u7167\u300D\uFF0C\u6210\u529F\u5F8C\u624D\u80FD\u5132\u5B58\u3002" : "\u8A2D\u5B9A\u5DF2\u53EF\u5132\u5B58\u3002";
   }
   f.addEventListener("input", updateSave);
   f.addEventListener("change", updateSave);

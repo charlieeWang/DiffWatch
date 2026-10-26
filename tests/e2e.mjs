@@ -237,7 +237,7 @@ try {
   );
   await editor.locator("form").evaluate((form) => form.requestSubmit());
   assert(await saveButton.isDisabled(), "Enter cannot bypass the preview gate");
-  await editor.getByRole("button", { name: "授權並驗證預覽" }).click();
+  await editor.getByRole("button", { name: "授權並擷取快照" }).click();
   await editor.locator("form pre").filter({ hasText: "驗證成功" }).waitFor();
   editor.on("dialog", (d) => d.accept());
   assert(await saveButton.isEnabled(), "successful preview enables save");
